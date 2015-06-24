@@ -3,10 +3,7 @@ We solve the Stokes problem in a square domain\n\
 and compare against exact solutions from Mirko Velic.\n\n\n";
 
 /*
-PETSC_ARCH=arch-c-exodus-master ./config/builder2.py check src/snes/examples/tutorials/ex69.c --retain --testnum=1 --args="-B 10"
-The computer p has a nonzero average!
-
-The varaiable-viscosity Stokes problem, which we discretize using the finite
+The variable-viscosity Stokes problem, which we discretize using the finite
 element method on an unstructured mesh. The weak form equations are
 
   < \nabla v, \nu(x) (\nabla u + {\nabla u}^T) > - < \nabla\cdot v, p > + < v, f > = 0
@@ -133,8 +130,8 @@ static void stokes_momentum_vel_J(PetscInt dim, PetscInt Nf, PetscInt NfAux,
 
   for (cI = 0; cI < dim; ++cI) {
     for (d = 0; d < dim; ++d) {
-      g3[((cI*dim+cI)*dim+d)*dim+d] += 0.5*nu; /*g3[cI, cI, d, d]*/
-      g3[((cI*dim+d)*dim+d)*dim+cI] += 0.5*nu; /*g3[cI, d, d, cI]*/
+      g3[((cI*dim+cI)*dim+d)*dim+d] += nu; /*g3[cI, cI, d, d]*/
+      g3[((cI*dim+d)*dim+d)*dim+cI] += nu; /*g3[cI, d, d, cI]*/
     }
   }
 }
@@ -946,7 +943,7 @@ static PetscErrorCode CreatePressureNullSpace(DM dm, AppCtx *user, Vec *v, MatNu
   ierr = DMPlexProjectFunction(dm, funcs, NULL, INSERT_ALL_VALUES, vec);CHKERRQ(ierr);
   ierr = VecNormalize(vec, NULL);CHKERRQ(ierr);
   ierr = PetscObjectSetName((PetscObject) vec, "Pressure Null Space");CHKERRQ(ierr);
-  ierr = VecViewFromOptions(vec, "null_", "-space_vec_view");CHKERRQ(ierr);
+  ierr = VecViewFromOptions(vec, NULL, "-null_space_vec_view");CHKERRQ(ierr);
   ierr = MatNullSpaceCreate(PetscObjectComm((PetscObject) dm), PETSC_FALSE, 1, &vec, nullSpace);CHKERRQ(ierr);
   if (v) {
     ierr = DMCreateGlobalVector(dm, v);CHKERRQ(ierr);
@@ -963,7 +960,7 @@ int main(int argc, char **argv)
   SNES             snes;                 /* nonlinear solver */
   DM               dm;                   /* problem definition */
   Vec              u,r;                  /* solution, residual vectors */
-  Mat              A,J;                  /* Jacobian matrix */
+  Mat              J;                    /* Jacobian matrix */
 #if 1
   MatNullSpace     nullSpace;            /* May be necessary for pressure */
   Vec              nullVec;
@@ -999,28 +996,23 @@ int main(int argc, char **argv)
   ierr = DMSNESSetFunctionLocal(dm,  (PetscErrorCode (*)(DM,Vec,Vec,void*))DMPlexSNESComputeResidualFEM,&user);CHKERRQ(ierr);
   ierr = DMSNESSetJacobianLocal(dm,  (PetscErrorCode (*)(DM,Vec,Mat,Mat,void*))DMPlexSNESComputeJacobianFEM,&user);CHKERRQ(ierr);
   ierr = CreatePressureNullSpace(dm, &user, &nullVec, &nullSpace);CHKERRQ(ierr);
-#if 0
-  ierr = DMSetMatType(dm,MATAIJ);CHKERRQ(ierr);
-  ierr = DMCreateMatrix(dm, &J);CHKERRQ(ierr);
-  A = J;
-  ierr = MatSetNullSpace(J, nullSpace);CHKERRQ(ierr);
-  if (A != J) {
-    ierr = MatSetNullSpace(A, nullSpace);CHKERRQ(ierr);
-  }
-  //ierr = SNESSetJacobian(snes, A, J, NULL, NULL);CHKERRQ(ierr);
-#endif
 
   ierr = SNESSetFromOptions(snes);CHKERRQ(ierr);
 
+  /* There should be a way to express this using the DM */
+  ierr = SNESSetUp(snes);CHKERRQ(ierr);
+  ierr = SNESGetJacobian(snes, NULL, &J, NULL, NULL);CHKERRQ(ierr);
+  ierr = MatSetNullSpace(J, nullSpace);CHKERRQ(ierr);
+
   ierr = DMPlexProjectFunction(dm, user.exactFuncs, ctxs, INSERT_ALL_VALUES, u);CHKERRQ(ierr);
   ierr = PetscObjectSetName((PetscObject) u, "Exact Solution");CHKERRQ(ierr);
-  ierr = VecViewFromOptions(u, "exact_", "-vec_view");CHKERRQ(ierr);
+  ierr = VecViewFromOptions(u, NULL, "-exact_vec_view");CHKERRQ(ierr);
   ierr = VecDot(nullVec, u, &pint);CHKERRQ(ierr);
   ierr = PetscPrintf(PETSC_COMM_WORLD, "Integral of pressure: %g\n", pint);CHKERRQ(ierr);
   ierr = DMSNESCheckFromOptions(snes, u, user.exactFuncs, ctxs);CHKERRQ(ierr);
   ierr = DMPlexProjectFunction(dm, initialGuess, NULL, INSERT_VALUES, u);CHKERRQ(ierr);
   ierr = PetscObjectSetName((PetscObject) u, "Initial Solution");CHKERRQ(ierr);
-  ierr = VecViewFromOptions(u, "initial_", "-vec_view");CHKERRQ(ierr);
+  ierr = VecViewFromOptions(u, NULL, "-initial_vec_view");CHKERRQ(ierr);
   ierr = PetscObjectSetName((PetscObject) u, "Solution");CHKERRQ(ierr);
   ierr = SNESSolve(snes, NULL, u);CHKERRQ(ierr);
   ierr = SNESGetIterationNumber(snes, &its);CHKERRQ(ierr);
@@ -1037,7 +1029,7 @@ int main(int argc, char **argv)
     ierr = DMPlexProjectFunction(dm, user.exactFuncs, ctxs, INSERT_ALL_VALUES, r);CHKERRQ(ierr);
     ierr = VecAXPY(r, -1.0, u);CHKERRQ(ierr);
     ierr = PetscObjectSetName((PetscObject) r, "Solution Error");CHKERRQ(ierr);
-    ierr = VecViewFromOptions(r, "error_", "-vec_view");CHKERRQ(ierr);
+    ierr = VecViewFromOptions(r, NULL, "-error_vec_view");CHKERRQ(ierr);
     ierr = DMRestoreGlobalVector(dm, &r);CHKERRQ(ierr);
   }
   if (user.showSolution) {
@@ -1049,10 +1041,6 @@ int main(int argc, char **argv)
 
   ierr = VecDestroy(&nullVec);CHKERRQ(ierr);
   ierr = MatNullSpaceDestroy(&nullSpace);CHKERRQ(ierr);
-#if 0
-  if (A != J) {ierr = MatDestroy(&A);CHKERRQ(ierr);}
-  ierr = MatDestroy(&J);CHKERRQ(ierr);
-#endif
   ierr = VecDestroy(&u);CHKERRQ(ierr);
   ierr = VecDestroy(&r);CHKERRQ(ierr);
   ierr = SNESDestroy(&snes);CHKERRQ(ierr);
