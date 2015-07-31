@@ -29,6 +29,8 @@ typedef struct {
   BCType        bcType;
   CoeffType     variableCoefficient;
   PetscErrorCode (**exactFuncs)(PetscInt dim, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx);
+  /* Solver */
+  PC            pcmg;              /* This is needed for error monitoring */
 } AppCtx;
 
 PetscErrorCode zero(PetscInt dim, const PetscReal x[], PetscInt Nf, PetscScalar *u, void *ctx)
@@ -399,20 +401,21 @@ PetscErrorCode CreateMesh(MPI_Comm comm, AppCtx *user, DM *dm)
 
   ierr = DMViewFromOptions(*dm, NULL, "-dm_view");CHKERRQ(ierr);
   if (user->viewHierarchy) {
-    DM cdm = *dm;
-    PetscInt i = 0;
-    char buf[255];
+    DM       cdm = *dm;
+    PetscInt i   = 0;
+    char     buf[256];
 
+    while (cdm) {ierr = DMPlexGetCoarseDM(cdm, &cdm);CHKERRQ(ierr); ++i;}
+    cdm = *dm;
     while (cdm) {
       PetscViewer viewer;
-      sprintf(buf, "ex12-%d.h5", i);
 
+      --i;
+      ierr = PetscSNPrintf(buf, 256, "ex12-%d.h5", i);CHKERRQ(ierr);
       ierr = PetscViewerHDF5Open(comm, buf, FILE_MODE_WRITE, &viewer);CHKERRQ(ierr);
       ierr = DMView(cdm, viewer);CHKERRQ(ierr);
       ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr);
-
       ierr = DMPlexGetCoarseDM(cdm, &cdm);CHKERRQ(ierr);
-      i = i + 1;
     }
   }
   ierr = PetscLogEventEnd(user->createMeshEvent,0,0,0,0);CHKERRQ(ierr);
@@ -547,6 +550,159 @@ PetscErrorCode SetupDiscretization(DM dm, AppCtx *user)
   PetscFunctionReturn(0);
 }
 
+#include "petsc/private/petscimpl.h"
+
+#undef __FUNCT__
+#define __FUNCT__ "KSPMonitorError"
+/*@C
+  KSPMonitorError - Outputs the error at each iteration of an iterative solver.
+
+  Collective on KSP
+
+  Input Parameters:
++ ksp   - the KSP
+. its   - iteration number
+. rnorm - 2-norm, preconditioned residual value (may be estimated).
+- ctx   - monitor context
+
+  Level: intermediate
+
+.keywords: KSP, default, monitor, residual
+.seealso: KSPMonitorSet(), KSPMonitorTrueResidualNorm(), KSPMonitorDefault()
+@*/
+PetscErrorCode KSPMonitorError(KSP ksp, PetscInt its, PetscReal rnorm, void *ctx)
+{
+  AppCtx        *user = (AppCtx *) ctx;
+  DM             dm, edm;
+  PetscDS        prob;
+  PetscFE        fe;
+  Vec            du, r;
+  PetscInt       level = 0;
+  PetscBool      hasLevel;
+  PetscViewer    viewer;
+  char           buf[256];
+  PetscErrorCode ierr;
+
+  PetscFunctionBegin;
+  ierr = KSPGetDM(ksp, &dm);CHKERRQ(ierr);
+  /* Create FE space for the error */
+  ierr = PetscFECreateDefault(dm, user->dim, 1, PETSC_TRUE, "error_", -1, &fe);CHKERRQ(ierr);
+  ierr = PetscSNPrintf(buf, 256, "%D", its);CHKERRQ(ierr);
+  ierr = PetscObjectSetName((PetscObject) fe, buf);CHKERRQ(ierr);
+  /* Create DM for error */
+  ierr = DMClone(dm, &edm);CHKERRQ(ierr);
+  ierr = DMPlexCopyCoordinates(dm, edm);CHKERRQ(ierr);
+  ierr = DMGetDS(edm, &prob);CHKERRQ(ierr);
+  ierr = PetscDSSetDiscretization(prob, 0, (PetscObject) fe);CHKERRQ(ierr);
+  /* Calculate solution */
+  {
+    PC       pc = user->pcmg; /* The MG PC */
+    DM       fdm,  cdm;
+    KSP      fksp, cksp;
+    Vec      fu,   cu;
+    PetscInt levels, l;
+
+    ierr = KSPBuildSolution(ksp, NULL, &du);CHKERRQ(ierr);
+    ierr = PetscObjectComposedDataGetInt((PetscObject) ksp, PetscMGLevelId, level, hasLevel);CHKERRQ(ierr);
+    ierr = PCMGGetLevels(pc, &levels);CHKERRQ(ierr);
+    ierr = PCMGGetSmoother(pc, levels-1, &fksp);CHKERRQ(ierr);
+    ierr = KSPBuildSolution(fksp, NULL, &fu);CHKERRQ(ierr);
+    for (l = levels-1; l > level; --l) {
+      Mat R;
+      Vec s;
+
+      ierr = PCMGGetSmoother(pc, l-1, &cksp);CHKERRQ(ierr);
+      ierr = KSPGetDM(cksp, &cdm);CHKERRQ(ierr);
+      ierr = DMGetGlobalVector(cdm, &cu);CHKERRQ(ierr);
+      ierr = PCMGGetRestriction(pc, l, &R);CHKERRQ(ierr);
+      ierr = PCMGGetRScale(pc, l, &s);CHKERRQ(ierr);
+      ierr = MatRestrict(R, fu, cu);CHKERRQ(ierr);
+      ierr = VecPointwiseMult(cu, cu, s);CHKERRQ(ierr);
+      if (l < levels-1) {ierr = DMRestoreGlobalVector(fdm, &fu);CHKERRQ(ierr);}
+      fdm  = cdm;
+      fu   = cu;
+    }
+    if (levels-1 > level) {
+      ierr = VecAXPY(du, 1.0, cu);CHKERRQ(ierr);
+      ierr = DMRestoreGlobalVector(cdm, &cu);CHKERRQ(ierr);
+    }
+  }
+  /* Calculate error */
+  ierr = DMGetGlobalVector(edm, &r);CHKERRQ(ierr);
+  ierr = PetscObjectSetName((PetscObject) r, "solution error");CHKERRQ(ierr);
+  ierr = DMPlexComputeL2DiffVec(edm, user->exactFuncs, NULL, du, r);CHKERRQ(ierr);
+  /* View error */
+  ierr = PetscSNPrintf(buf, 256, "ex12-%D.h5", level);CHKERRQ(ierr);
+  ierr = PetscViewerHDF5Open(PETSC_COMM_WORLD, buf, FILE_MODE_APPEND, &viewer);CHKERRQ(ierr);
+  ierr = VecView(r, viewer);CHKERRQ(ierr);
+  /* Cleanup */
+  ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr);
+  ierr = DMRestoreGlobalVector(edm, &r);CHKERRQ(ierr);
+  ierr = DMDestroy(&edm);CHKERRQ(ierr);
+  ierr = PetscFEDestroy(&fe);CHKERRQ(ierr);
+  PetscFunctionReturn(0);
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "SNESMonitorError"
+/*@C
+  SNESMonitorError - Outputs the error at each iteration of an iterative solver.
+
+  Collective on SNES
+
+  Input Parameters:
++ snes  - the SNES
+. its   - iteration number
+. rnorm - 2-norm of residual
+- ctx   - user context
+
+  Level: intermediate
+
+.keywords: SNES, nonlinear, default, monitor, norm
+.seealso: SNESMonitorDefault(), SNESMonitorSet(), SNESMonitorSolution()
+@*/
+PetscErrorCode SNESMonitorError(SNES snes, PetscInt its, PetscReal rnorm, void *ctx)
+{
+  AppCtx        *user = (AppCtx *) ctx;
+  DM             dm, edm;
+  PetscDS        prob;
+  PetscFE        fe;
+  Vec            u, r;
+  PetscInt       level;
+  PetscBool      hasLevel;
+  PetscViewer    viewer;
+  char           buf[256];
+  PetscErrorCode ierr;
+
+  PetscFunctionBegin;
+  ierr = SNESGetDM(snes, &dm);CHKERRQ(ierr);
+  /* Create FE space for the error */
+  ierr = PetscFECreateDefault(dm, user->dim, 1, PETSC_TRUE, "error_", -1, &fe);CHKERRQ(ierr);
+  ierr = PetscSNPrintf(buf, 256, "%D", its);CHKERRQ(ierr);
+  ierr = PetscObjectSetName((PetscObject) fe, buf);CHKERRQ(ierr);
+  /* Create DM for error */
+  ierr = DMClone(dm, &edm);CHKERRQ(ierr);
+  ierr = DMPlexCopyCoordinates(dm, edm);CHKERRQ(ierr);
+  ierr = DMGetDS(edm, &prob);CHKERRQ(ierr);
+  ierr = PetscDSSetDiscretization(prob, 0, (PetscObject) fe);CHKERRQ(ierr);
+  /* Calculate error */
+  ierr = SNESGetSolution(snes, &u);CHKERRQ(ierr);
+  ierr = DMGetGlobalVector(edm, &r);CHKERRQ(ierr);
+  ierr = PetscObjectSetName((PetscObject) r, "solution error");CHKERRQ(ierr);
+  ierr = DMPlexComputeL2DiffVec(edm, user->exactFuncs, NULL, u, r);CHKERRQ(ierr);
+  /* View error */
+  ierr = PetscObjectComposedDataGetInt((PetscObject) snes, PetscMGLevelId, level, hasLevel);CHKERRQ(ierr);
+  ierr = PetscSNPrintf(buf, 256, "ex12-%D.h5", level);CHKERRQ(ierr);
+  ierr = PetscViewerHDF5Open(PETSC_COMM_WORLD, buf, FILE_MODE_APPEND, &viewer);CHKERRQ(ierr);
+  ierr = VecView(r, viewer);CHKERRQ(ierr);
+  /* Cleanup */
+  ierr = PetscViewerDestroy(&viewer);CHKERRQ(ierr);
+  ierr = DMRestoreGlobalVector(edm, &r);CHKERRQ(ierr);
+  ierr = DMDestroy(&edm);CHKERRQ(ierr);
+  ierr = PetscFEDestroy(&fe);CHKERRQ(ierr);
+  PetscFunctionReturn(0);
+}
+
 #undef __FUNCT__
 #define __FUNCT__ "main"
 int main(int argc, char **argv)
@@ -560,6 +716,7 @@ int main(int argc, char **argv)
   JacActionCtx   userJ;       /* context for Jacobian MF action */
   PetscInt       its;         /* iterations for convergence */
   PetscReal      error = 0.0; /* L_2 error in the solution */
+  PetscBool      isFAS;
   PetscErrorCode ierr;
 
   ierr = PetscInitialize(&argc, &argv, NULL, help);CHKERRQ(ierr);
@@ -634,6 +791,34 @@ int main(int argc, char **argv)
     ierr = DMGlobalToLocalEnd(dm, u, INSERT_VALUES, lv);CHKERRQ(ierr);
     ierr = DMPrintLocalVec(dm, "Local function", 1.0e-10, lv);CHKERRQ(ierr);
     ierr = DMRestoreLocalVector(dm, &lv);CHKERRQ(ierr);
+  }
+  if (user.viewHierarchy) {
+    SNES      lsnes;
+    KSP       ksp;
+    PC        pc;
+    PetscInt  numLevels, l;
+    PetscBool isMG;
+
+    ierr = PetscObjectTypeCompare((PetscObject) snes, SNESFAS, &isFAS);CHKERRQ(ierr);
+    if (isFAS) {
+      ierr = SNESFASGetLevels(snes, &numLevels);CHKERRQ(ierr);
+      for (l = 0; l < numLevels; ++l) {
+        ierr = SNESFASGetCycleSNES(snes, l, &lsnes);CHKERRQ(ierr);
+        ierr = SNESMonitorSet(lsnes, SNESMonitorError, &user, NULL);CHKERRQ(ierr);
+      }
+    } else {
+      ierr = SNESGetKSP(snes, &ksp);CHKERRQ(ierr);
+      ierr = KSPGetPC(ksp, &pc);CHKERRQ(ierr);
+      ierr = PetscObjectTypeCompare((PetscObject) pc, PCMG, &isMG);CHKERRQ(ierr);
+      if (isMG) {
+        user.pcmg = pc;
+        ierr = PCMGGetLevels(pc, &numLevels);CHKERRQ(ierr);
+        for (l = 0; l < numLevels; ++l) {
+          ierr = PCMGGetSmootherDown(pc, l, &ksp);CHKERRQ(ierr);
+          ierr = KSPMonitorSet(ksp, KSPMonitorError, &user, NULL);CHKERRQ(ierr);
+        }
+      }
+    }
   }
   if (user.runType == RUN_FULL) {
     PetscErrorCode (*initialGuess[1])(PetscInt dim, const PetscReal x[], PetscInt Nf, PetscScalar u[], void *ctx) = {zero};
