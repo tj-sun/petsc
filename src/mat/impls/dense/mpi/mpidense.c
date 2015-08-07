@@ -1089,6 +1089,8 @@ static PetscErrorCode  MatSetRandom_MPIDense(Mat x,PetscRandom rctx)
   PetscFunctionReturn(0);
 }
 
+extern PetscErrorCode MatMatMultNumeric_MPIDense(Mat A,Mat,Mat);
+
 /* -------------------------------------------------------------------*/
 static struct _MatOps MatOps_Values = { MatSetValues_MPIDense,
                                         MatGetRow_MPIDense,
@@ -1182,7 +1184,7 @@ static struct _MatOps MatOps_Values = { MatSetValues_MPIDense,
                                 /* 89*/
                                         0,
                                         0,
-                                        0,
+                                        MatMatMultNumeric_MPIDense,
                                         0,
                                         0,
                                 /* 94*/ 0,
