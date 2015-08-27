@@ -306,6 +306,7 @@ class Configure(config.base.Configure):
         self.setCompilers.LIBS = oldLibs
         self.logWrite(self.setCompilers.restoreLog())
         self.logPrint('Error message from compiling {'+str(e)+'}', 4, 'compilers')
+        self.logWrite(self.setCompilers.restoreLog())
         raise RuntimeError('C libraries cannot directly be used from Fortran')
       self.logWrite(self.setCompilers.restoreLog())
     return
@@ -702,13 +703,14 @@ class Configure(config.base.Configure):
         self.fortranPreprocess = 1
         self.setCompilers.popLanguage()
         self.logPrint('Fortran uses CPP preprocessor', 3, 'compilers')
+        self.logWrite(self.setCompilers.restoreLog())
         return
       except RuntimeError:
         setattr(self.setCompilers, flagsArg, oldFlags)
     self.setCompilers.popLanguage()
     self.fortranPreprocess = 0
-    self.logWrite(self.setCompilers.restoreLog())
     self.logPrint('Fortran does NOT use CPP preprocessor', 3, 'compilers')
+    self.logWrite(self.setCompilers.restoreLog())
     return
 
   def checkFortranDefineCompilerOption(self):
@@ -723,12 +725,12 @@ class Configure(config.base.Configure):
         self.FortranDefineCompilerOption = flag
         self.framework.addMakeMacro('FC_DEFINE_FLAG',self.FortranDefineCompilerOption)
         self.setCompilers.popLanguage()
-        self.logWrite(self.setCompilers.restoreLog())
         self.logPrint('Fortran uses '+flag+' for defining macro', 3, 'compilers')
+        self.logWrite(self.setCompilers.restoreLog())
         return
     self.setCompilers.popLanguage()
-    self.logWrite(self.setCompilers.restoreLog())
     self.logPrint('Fortran does not support defining macro', 3, 'compilers')
+    self.logWrite(self.setCompilers.restoreLog())
     return
 
   def checkFortranLibraries(self):
