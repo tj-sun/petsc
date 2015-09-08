@@ -251,8 +251,9 @@ runex1_2:
           ${MPIEXEC} -n 1 ./ex1 -ksp_view_solution ascii:ex1_2_sol.tmp:ascii_matlab:append >> ex1_2.tmp 2>&1; \
           ${MPIEXEC} -n 1 ./ex1 -ksp_view_solution ascii:ex1_2_sol.tmp:default:append >> ex1_2.tmp 2>&1; \
           ${DIFF} output/ex1_2.out ex1_2.tmp || printf '${PWD}\nPossible problem with ex1_2 stdout, diffs above\n=========================================\n'; \
-          ${DIFF} output/ex1_2_sol.out ex1_2_sol.tmp || printf '${PWD}\nPossible problem with ex1_2_sol, diffs above\n=========================================\n'; \
-          ${RM} -f ex1_2.tmp ex1_2_sol.tmp
+          ${GREP} -v Vec_ ex1_2_sol.tmp > ex1_2_sol.tmp2; \
+          ${DIFF} output/ex1_2_sol.out ex1_2_sol.tmp2 || printf '${PWD}\nPossible problem with ex1_2_sol, diffs above\n=========================================\n'; \
+          ${RM} -f ex1_2.tmp ex1_2_sol.tmp ex1_2_sol.tmp2
 
 runex1_X:
 	-@${MPIEXEC} -n 1 ./ex1 -ksp_monitor_short -ksp_type gmres -ksp_gmres_krylov_monitor -snes_monitor_short > ex1_X.tmp 2>&1;   \
@@ -926,18 +927,6 @@ testex19: ex19.PETSc
         ${RM} -f ex19_1.tmp; \
         ${MAKE} PETSC_ARCH=${PETSC_ARCH} PETSC_DIR=${PETSC_DIR} ex19.rm ; fi
 
-runex19_pthread:
-	-@${MPIEXEC} -n 1 ./ex19 -pc_type none -ksp_type fgmres -threadcomm_type pthread -threadcomm_nthreads 2 > ex19.tmp 2>&1; \
-	   if (${DIFF} output/ex19_threadcomm.out ex19.tmp) then true; \
-	   else  printf "${PWD}\nPossible problem with ex19_pthread, diffs above\n=========================================\n"; fi; \
-	   ${RM} -f ex19.tmp
-
-runex19_openmp:
-	-@${MPIEXEC} -n 1 ./ex19 -pc_type none -ksp_type fgmres -threadcomm_type openmp -threadcomm_nthreads 2 > ex19.tmp 2>&1; \
-	   if (${DIFF} output/ex19_threadcomm.out ex19.tmp) then true; \
-	   else  printf "${PWD}\nPossible problem with ex19_openmp, diffs above\n=========================================\n"; fi; \
-	   ${RM} -f ex19.tmp
-
 runex19_cusp:
 	-@${MPIEXEC} -n 1 ./ex19 -dm_vec_type cusp -dm_mat_type aijcusp -pc_type none -ksp_type fgmres -snes_monitor_short -snes_rtol 1.e-5 > ex19.tmp 2>&1; \
 	   if (${DIFF} output/ex19_cusp.out ex19.tmp) then true; \
@@ -1182,7 +1171,6 @@ TESTEXAMPLES_SUPERLU           = ex19.PETSc runex19_superlu ex19.rm
 TESTEXAMPLES_SUPERLU_DIST      = ex19.PETSc runex19_superlu_dist runex19_superlu_dist_2 ex19.rm  ex19.PETSc  ex19.rm
 TESTEXAMPLES_PASTIX            = ex19.PETSc runex19_11 runex19_12 ex19.rm  ex19.PETSc runex19_11 runex19_12 ex19.rm
 TESTEXAMPLES_CUSP              = ex19.PETSc runex19_cusp ex19.rm ex47cu.PETSc runex47cu ex47cu.rm
-TESTEXAMPLES_THREADCOMM        = ex19.PETSc runex19_pthread runex19_openmp ex19.rm
 TESTEXAMPLES_SUITESPARSE       = ex19.PETSc runex19_umfpack runex19_klu runex19_klu_2 runex19_klu_3 ex19.rm
 
 
