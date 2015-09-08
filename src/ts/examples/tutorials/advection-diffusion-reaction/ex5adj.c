@@ -53,6 +53,29 @@ typedef struct {
 extern PetscErrorCode RHSFunction(TS,PetscReal,Vec,Vec,void*),InitialConditions(DM,Vec);
 extern PetscErrorCode RHSJacobian(TS,PetscReal,Vec,Mat,Mat,void*);
 
+PetscErrorCode InitializeLambda(DM da,Vec lambda,PetscReal x,PetscReal y)
+{
+   PetscInt i,j,Mx,My,xs,ys,xm,ym;
+   PetscErrorCode ierr;
+   Field **l;
+   PetscFunctionBegin;
+
+   ierr = DMDAGetInfo(da,PETSC_IGNORE,&Mx,&My,PETSC_IGNORE,PETSC_IGNORE,PETSC_IGNORE,PETSC_IGNORE,PETSC_IGNORE,PETSC_IGNORE,PETSC_IGNORE,PETSC_IGNORE,PETSC_IGNORE,PETSC_IGNORE);CHKERRQ(ierr);
+   /* locate the global i index for x and j index for y */
+   i = (PetscInt)(x*(Mx-1));
+   j = (PetscInt)(y*(My-1));
+   ierr = DMDAGetCorners(da,&xs,&ys,NULL,&xm,&ym,NULL);CHKERRQ(ierr);
+
+   if (xs <= i && i < xs+xm && ys <= j && j < ys+ym) {
+     /* the i,j vertex is on this process */
+     ierr = DMDAVecGetArray(da,lambda,&l);CHKERRQ(ierr);
+     l[j][i].u = 1.0;
+     l[j][i].v = 1.0;
+     ierr = DMDAVecRestoreArray(da,lambda,&l);CHKERRQ(ierr);
+   }
+   PetscFunctionReturn(0);
+}
+
 #undef __FUNCT__
 #define __FUNCT__ "main"
 int main(int argc,char **argv)
@@ -78,7 +101,7 @@ int main(int argc,char **argv)
   /* - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
      Create distributed array (DMDA) to manage parallel grid and vectors
   - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - */
-  ierr = DMDACreate2d(PETSC_COMM_WORLD,DM_BOUNDARY_PERIODIC,DM_BOUNDARY_PERIODIC,DMDA_STENCIL_STAR,-3,-3,PETSC_DECIDE,PETSC_DECIDE,2,1,NULL,NULL,&da);CHKERRQ(ierr);
+  ierr = DMDACreate2d(PETSC_COMM_WORLD,DM_BOUNDARY_PERIODIC,DM_BOUNDARY_PERIODIC,DMDA_STENCIL_STAR,-65,-65,PETSC_DECIDE,PETSC_DECIDE,2,1,NULL,NULL,&da);CHKERRQ(ierr);
   ierr = DMDASetFieldName(da,0,"u");CHKERRQ(ierr);
   ierr = DMDASetFieldName(da,1,"v");CHKERRQ(ierr);
 
@@ -127,8 +150,7 @@ int main(int argc,char **argv)
   ierr = VecDuplicate(x,&lambda[0]);CHKERRQ(ierr);
   /*   Reset initial conditions for the adjoint integration */
   ierr = VecGetArray(lambda[0],&x_ptr);CHKERRQ(ierr);
-  x_ptr[0] = 1.0; 
-  ierr = VecRestoreArray(lambda[0],&x_ptr);CHKERRQ(ierr);
+  ierr = InitializeLambda(da,lambda[0],0.5,0.5);CHKERRQ(ierr);
 
   ierr = TSSetCostGradients(ts,1,lambda,NULL);CHKERRQ(ierr);
 
