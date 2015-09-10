@@ -27,24 +27,23 @@ PetscErrorCode TSTrajectorySet_Basic(TSTrajectory jac,TS ts,PetscInt stepnum,Pet
   PetscErrorCode ierr;
 
   PetscFunctionBeginUser;
+  ierr = TSGetTotalSteps(ts,&stepnum);CHKERRQ(ierr);
   if (stepnum == 0) {
 #if defined(PETSC_HAVE_POPEN)
-    if (stepnum == 0) {
-      PetscMPIInt rank;
-      ierr = MPI_Comm_rank(PetscObjectComm((PetscObject)ts),&rank);CHKERRQ(ierr);
-      if (!rank) {
-        char command[PETSC_MAX_PATH_LEN];
-        FILE *fd;
-        int  err;
+    PetscMPIInt rank;
+    ierr = MPI_Comm_rank(PetscObjectComm((PetscObject)ts),&rank);CHKERRQ(ierr);
+    if (!rank) {
+      char command[PETSC_MAX_PATH_LEN];
+      FILE *fd;
+      int  err;
 
-        ierr = PetscMemzero(command,sizeof(command));CHKERRQ(ierr);
-        ierr = PetscSNPrintf(command,PETSC_MAX_PATH_LEN,"rm -fr %s","SA-data");CHKERRQ(ierr);
-        ierr = PetscPOpen(PETSC_COMM_SELF,NULL,command,"r",&fd);CHKERRQ(ierr);
-        ierr = PetscPClose(PETSC_COMM_SELF,fd,&err);CHKERRQ(ierr);
-        ierr = PetscSNPrintf(command,PETSC_MAX_PATH_LEN,"mkdir %s","SA-data");CHKERRQ(ierr);
-        ierr = PetscPOpen(PETSC_COMM_SELF,NULL,command,"r",&fd);CHKERRQ(ierr);
-        ierr = PetscPClose(PETSC_COMM_SELF,fd,&err);CHKERRQ(ierr);
-      }
+      ierr = PetscMemzero(command,sizeof(command));CHKERRQ(ierr);
+      ierr = PetscSNPrintf(command,PETSC_MAX_PATH_LEN,"rm -fr %s","SA-data");CHKERRQ(ierr);
+      ierr = PetscPOpen(PETSC_COMM_SELF,NULL,command,"r",&fd);CHKERRQ(ierr);
+      ierr = PetscPClose(PETSC_COMM_SELF,fd,&err);CHKERRQ(ierr);
+      ierr = PetscSNPrintf(command,PETSC_MAX_PATH_LEN,"mkdir %s","SA-data");CHKERRQ(ierr);
+      ierr = PetscPOpen(PETSC_COMM_SELF,NULL,command,"r",&fd);CHKERRQ(ierr);
+      ierr = PetscPClose(PETSC_COMM_SELF,fd,&err);CHKERRQ(ierr);
     }
 #endif
     ierr = PetscSNPrintf(filename,sizeof(filename),"SA-data/SA-%06d.bin",stepnum);CHKERRQ(ierr);
@@ -83,6 +82,7 @@ PetscErrorCode TSTrajectoryGet_Basic(TSTrajectory jac,TS ts,PetscInt stepnum,Pet
   PetscErrorCode ierr;
 
   PetscFunctionBeginUser;
+  ierr = TSGetTotalSteps(ts,&stepnum);CHKERRQ(ierr);
   ierr = PetscSNPrintf(filename,sizeof filename,"SA-data/SA-%06d.bin",stepnum);CHKERRQ(ierr);
   ierr = PetscViewerBinaryOpen(PETSC_COMM_WORLD,filename,FILE_MODE_READ,&viewer);CHKERRQ(ierr);
 
