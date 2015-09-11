@@ -87,8 +87,8 @@ static PetscErrorCode DMLabelMakeInvalid_Private(DMLabel label, PetscInt v)
 }
 
 #undef __FUNCT__
-#define __FUNCT__ "DMLabelAddStratum_Private"
-static PetscErrorCode DMLabelAddStratum_Private(DMLabel label, PetscInt value)
+#define __FUNCT__ "DMLabelAddStratum"
+PetscErrorCode DMLabelAddStratum(DMLabel label, PetscInt value)
 {
   PetscInt    v, *tmpV, *tmpS, **tmpP;
   PetscHashI *tmpH;
@@ -482,9 +482,7 @@ PetscErrorCode DMLabelSetValue(DMLabel label, PetscInt point, PetscInt value)
     if (label->stratumValues[v] == value) break;
   }
   /* Create new table */
-  if (v >= label->numStrata) {
-    ierr = DMLabelAddStratum_Private(label, value);CHKERRQ(ierr);
-  }
+  if (v >= label->numStrata) {ierr = DMLabelAddStratum(label, value);CHKERRQ(ierr);}
   ierr = DMLabelMakeInvalid_Private(label, v);CHKERRQ(ierr);
   /* Set key */
   PetscHashIPut(label->ht[v], point, ret, iter);
@@ -617,6 +615,7 @@ PetscErrorCode DMLabelGetStratumBounds(DMLabel label, PetscInt value, PetscInt *
   for (v = 0; v < label->numStrata; ++v) {
     if (label->stratumValues[v] != value) continue;
     ierr = DMLabelMakeValid_Private(label, v);CHKERRQ(ierr);
+    if (label->stratumSizes[v]  <= 0)     break;
     if (start) *start = label->points[v][0];
     if (end)   *end   = label->points[v][label->stratumSizes[v]-1]+1;
     break;
