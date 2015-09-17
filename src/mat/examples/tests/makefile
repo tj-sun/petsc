@@ -22,7 +22,7 @@ EXAMPLESC	 = ex1.c ex2.c ex3.c ex4.c ex5.c ex6.c ex7.c ex8.c ex9.c \
                 ex136.c ex137.c ex138.c ex139.c ex140.c ex141.c ex142.c \
                 ex143.c ex144.c ex145.c ex146.c ex147.c ex148.c ex149.c \
                 ex150.c ex151.c ex152.c ex153.c ex155.c ex157.c ex158.c ex159.c ex164.c ex169.c ex171.c ex172.c ex173.c ex174.cxx ex175.c ex180.c \
-                ex181.c ex182.c ex183.c ex190.c ex191.c ex192.c ex193. ex194.c
+                ex181.c ex182.c ex183.c ex190.c ex191.c ex192.c ex193. ex194.c ex195.c
 
 EXAMPLESF	 = ex16f90.F ex36f.F ex58f.F ex63f.F ex67f.F ex79f.F ex85f.F ex105f.F ex120f.F ex126f.F ex171f.F
 
@@ -743,6 +743,11 @@ ex193: ex193.o chkopts
 ex194: ex194.o chkopts
 	-${CLINKER} -o ex194 ex194.o ${PETSC_MAT_LIB}
 	${RM} ex194.o
+
+ex195: ex195.o chkopts
+	-${CLINKER} -o ex195 ex195.o ${PETSC_MAT_LIB}
+	${RM} ex195.o
+
 #-----------------------------------------------------------------------------
 NPROCS    = 1 3
 MATSHAPES = A B
@@ -2405,7 +2410,6 @@ runex192:
 	   ${DIFF} output/ex192.out ex192.tmp || printf "${PWD}\nPossible problem with ex192, diffs above\n=========================================\n"; \
 	   ${RM} -f ex192.tmp
 
-
 runex193:
 	  -@${MPIEXEC} -n 4 ./ex193   -mat_partitioning_hierarchical_Nfineparts 2  > ex193.tmp 2>&1; \
 	   ${DIFF} output/ex193.out ex193.tmp || printf "${PWD}\nPossible problem with ex193, diffs above\n=========================================\n"; \
@@ -2415,6 +2419,10 @@ runex194:
 	  -@${MPIEXEC} -n 2 ./ex194   > ex194.tmp 2>&1; \
 	   ${DIFF} output/ex194_1.out ex194.tmp || printf "${PWD}\nPossible problem with ex194, diffs above\n=========================================\n"; \
 	   ${RM} -f ex194.tmp
+runex195:
+	  -@${MPIEXEC} -n 2 ./ex195   > ex195.tmp 2>&1; \
+	   ${DIFF} output/ex195.out ex195.tmp || printf "${PWD}\nPossible problem with ex195, diffs above\n=========================================\n"; \
+	   ${RM} -f ex195.tmp
 
 TESTEXAMPLES_C		       = ex1.PETSc runex1 ex1.rm ex3.PETSc runex3 ex3.rm ex4.PETSc ex4.rm  ex5.PETSc runex5 runex5_2 ex5.rm \
                                  ex6.PETSc runex6 ex6.rm ex8.PETSc runex8 ex8.rm \
@@ -2449,7 +2457,7 @@ TESTEXAMPLES_C		       = ex1.PETSc runex1 ex1.rm ex3.PETSc runex3 ex3.rm ex4.PET
                                  runex172_baij runex172_mpibaij runex172_sbaij runex172_mpisbaij ex172.rm ex181.PETSc runex181 runex181_2 ex181.rm\
                                  ex182.PETSc runex182 runex182_2 runex182_3 runex182_4 runex182_5 runex182_6 ex182.rm \
                                  ex183.PETSc runex183_2_1 runex183_3_2 runex183_4_2 runex183_6_2 ex183.rm\
-                                 ex191.PETSc runex191 ex191.rm ex194.PETSc runex194 ex194.rm
+                                 ex191.PETSc runex191 ex191.rm ex194.PETSc runex194 ex194.rm ex195.PETSc runex195 ex195.rm
 TESTEXAMPLES_C_X	       = ex2.PETSc runex2 ex2.rm ex7.PETSc runex7 ex7.rm \
                                  ex12.PETSc runex12 runex12_2 runex12_3 runex12_4 ex12.rm ex13.PETSc runex13 ex13.rm \
                                  ex17.PETSc runex17 ex17.rm ex19.PETSc runex19 ex19.rm ex24.PETSc ex24.rm ex25.PETSc \
