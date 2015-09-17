@@ -24,7 +24,6 @@ EXAMPLESC	 = ex1.c ex2.c ex3.c ex4.c ex5.c ex6.c ex7.c ex8.c ex9.c \
                 ex150.c ex151.c ex152.c ex153.c ex155.c ex157.c ex158.c ex159.c ex164.c ex169.c ex171.c ex172.c ex173.c ex174.cxx ex175.c ex180.c \
                 ex181.c ex182.c ex183.c ex190.c ex191.c ex192.c ex193. ex194.c
 
-
 EXAMPLESF	 = ex16f90.F ex36f.F ex58f.F ex63f.F ex67f.F ex79f.F ex85f.F ex105f.F ex120f.F ex126f.F ex171f.F
 
 include ${PETSC_DIR}/lib/petsc/conf/variables
@@ -348,10 +347,6 @@ ex82: ex82.o chkopts
 ex83: ex83.o chkopts
 	-${CLINKER} -o ex83 ex83.o ${PETSC_MAT_LIB}
 	${RM} ex83.o
-
-ex84: ex84.o chkopts
-	-${CLINKER} -o ex84 ex84.o ${PETSC_MAT_LIB}
-	${RM} ex84.o
 
 ex79f: ex79f.o chkopts
 	-${FLINKER} -o ex79f ex79f.o ${PETSC_MAT_LIB}
@@ -2483,7 +2478,7 @@ TESTEXAMPLES_DATAFILESPATH     = ex40.PETSc runex40 runex40_2 ex40.rm ex41.PETSc
                                  ex47.PETSc ex47.rm ex53.PETSc runex53 ex53.rm \
                                  ex94.PETSc runex94_matmatmult runex94_matmatmult_2 runex94_scalable0 runex94_scalable1 \
                                  runex94_2_mattransposematmult_nonscalable runex94_2_mattransposematmult_matmatmult ex94.rm \
-                                 ex111.PETSc runex111 runex111_2 runex111_3 ex111.rm \
+                                 ex111.PETSc runex111_3 ex111.rm \
                                  ex136.PETSc runex136 runex136_2 runex136_3 \
                                  runex136_4 runex136_5 runex136_6 ex136.rm \
                                  ex138.PETSc runex138_1 runex138_2 ex138.rm \
