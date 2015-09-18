@@ -62,6 +62,8 @@ int main(int argc,char **args)
   ierr = MatDestroy(&A2);CHKERRQ(ierr);
   ierr = MatDestroy(&A3);CHKERRQ(ierr);
   ierr = MatDestroy(&A4);CHKERRQ(ierr);
+  ierr = MatDestroy(&nest);CHKERRQ(ierr);
+  ierr = MatDestroy(&aij);CHKERRQ(ierr);
   ierr = PetscFinalize();
   return 0;
 }
