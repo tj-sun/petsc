@@ -368,7 +368,8 @@ static PetscErrorCode  PetscPrintExeSpecs(PetscViewer viewer)
   char               version[256], buildoptions[128];
   PetscMPIInt        size;
   MPI_Comm           comm;
-
+  size_t             len;
+  
   PetscFunctionBegin;
   ierr = PetscObjectGetComm((PetscObject)viewer,&comm);CHKERRQ(ierr);
   ierr = PetscGetArchType(arch,sizeof(arch));CHKERRQ(ierr);
@@ -398,7 +399,8 @@ static PetscErrorCode  PetscPrintExeSpecs(PetscViewer viewer)
   sprintf(buildoptions, "ComplexC++Kernels");
 #  endif
 #endif
-  if (strlen(buildoptions)>0) {
+  ierr = PetscStrlen(buildoptions,&len);CHKERRQ(ierr);
+  if (len) {
     ierr = PetscViewerXMLPutString(viewer, "petscbuildoptions", "Petsc build options", buildoptions);CHKERRQ(ierr);
   }
   ierr = PetscViewerXMLEndSection(viewer, "runspecification");CHKERRQ(ierr);
@@ -625,7 +627,7 @@ static PetscErrorCode  PetscCreateLogTreeNested(PetscViewer viewer, PetscNestedE
   maxDefaultTimer = j;
 
   /* Find default timer's place in the tree */
-  ierr = PetscMalloc1(maxDefaultTimer+1,&treeIndices);CHKERRQ(ierr);
+  ierr = PetscCalloc1(maxDefaultTimer+1,&treeIndices);CHKERRQ(ierr);
   treeIndices[0] = 0;
   for (i=1; i<nTimers; i++) {
     PetscLogEvent dftEvent = tree[i].dftEvent;
@@ -635,7 +637,7 @@ static PetscErrorCode  PetscCreateLogTreeNested(PetscViewer viewer, PetscNestedE
   /* Find each dftParent's nested identification */
   for (i=0; i<nTimers; i++) {
     PetscLogEvent dftParent = tree[i].dftParent;
-    if (dftParent!=0) {
+    if (dftParent) {
       int j = treeIndices[dftParent];
       tree[i].nstParent  = tree[j].nstEvent;
     }
@@ -713,13 +715,13 @@ static PetscErrorCode  PetscCreateLogTreeNested(PetscViewer viewer, PetscNestedE
       depth++;
       if (i<nTimers) {
         for (j=0;             j<tree[i].depth; j++) nstMyPath[j] = tree[i].nstPath[j];
-        for (j=tree[i].depth; j<depth;         j++) nstMyPath[j] = illegalEvent;
+        for (j=tree[i].depth; j<=depth;         j++) nstMyPath[j] = illegalEvent;
       } else {
-        for (j=0;             j<depth;         j++) nstMyPath[j] = illegalEvent;
+        for (j=0;             j<=depth;         j++) nstMyPath[j] = illegalEvent;
       }
       
       /* Communicate with other processes to obtain the next path and its depth */
-      ierr = MPI_Allreduce(nstMyPath, nstPath, depth, MPI_INT, MPI_MIN, comm);CHKERRQ(ierr);
+      ierr = MPI_Allreduce(nstMyPath, nstPath, depth+1, MPI_INT, MPI_MIN, comm);CHKERRQ(ierr);
       for (j=depth-1; (int) j>=0; j--) { 
         if (nstPath[j]==illegalEvent) depth=j;
       }
@@ -729,7 +731,7 @@ static PetscErrorCode  PetscCreateLogTreeNested(PetscViewer viewer, PetscNestedE
         
         /* check whether the next path is the same as this process's next path */
         same = PETSC_TRUE;     
-        for (j=0; same && j<=depth; j++) { same = (PetscBool) (same &&  nstMyPath[j] == nstPath[j]);}
+        for (j=0; same && j<=depth; j++) { same = (same &&  nstMyPath[j] == nstPath[j]) ? PETSC_TRUE : PETSC_FALSE;}
         
         if (same) { 
           /* Register 'own path' */
@@ -811,7 +813,7 @@ static PetscErrorCode  PetscPrintXMLNestedLinePerfResults(PetscViewer viewer, co
   PetscFunctionReturn(0);
 }
 
- /* Print one line in performance tree */
+#define N_COMM 8
 #undef __FUNCT__
 #define __FUNCT__ "PetscLogPrintNestedLine"
 static PetscErrorCode  PetscLogPrintNestedLine(PetscViewer viewer,PetscEventPerfInfo perfInfo,PetscLogDouble countsPerCall,int parentCount,int depth,const char *name,PetscLogDouble totalTime,PetscBool *isPrinted)
@@ -822,8 +824,7 @@ static PetscErrorCode  PetscLogPrintNestedLine(PetscViewer viewer,PetscEventPerf
   PetscLogDouble reductSpeedMx,   reductSpeedMn;
   PetscLogDouble flopSpeedMx,     flopSpeedMn;
   PetscLogDouble msgSpeedMx,      msgSpeedMn;
-  const int      n_comm = 8;
-  PetscLogDouble commarr_in[n_comm], commarr_out[n_comm];
+  PetscLogDouble commarr_in[N_COMM], commarr_out[N_COMM];
   PetscErrorCode ierr;
   MPI_Comm       comm;
 
@@ -846,7 +847,7 @@ static PetscErrorCode  PetscLogPrintNestedLine(PetscViewer viewer,PetscEventPerf
   commarr_in[6] = time>0.0 ? -perfInfo.messageLength/time : -1e30;
   commarr_in[7] = parentCount>0    ? -countsPerCall      : -1e30;
 
-  ierr = MPI_Allreduce(commarr_in, commarr_out,  n_comm, MPIU_PETSCLOGDOUBLE, MPI_MAX, comm);CHKERRQ(ierr);
+  ierr = MPI_Allreduce(commarr_in, commarr_out,  N_COMM, MPIU_PETSCLOGDOUBLE, MPI_MAX, comm);CHKERRQ(ierr);
 
   flopSpeedMx     =  commarr_out[0];
   reductSpeedMx   =  commarr_out[1];
@@ -1071,18 +1072,26 @@ static PetscErrorCode  PetscLogNestedPrint(PetscViewer viewer, PetscNestedEventT
       if ((children[i].val/totalTime) < (threshTime/100.0)) {
         /* ignored: no output */
       } else if (children[i].id==-1) {
-        /* output for 'self' */
-        char selfname[6+strlen(name)];
+        size_t  len;
+        char    *selfname;
+
+        ierr = PetscStrlen(name,&len);CHKERRQ(ierr);
+        ierr = PetscMalloc1(7+len,&selfname);CHKERRQ(ierr);
         sprintf(selfname,"self-%s",name);
-        ierr = PetscLogPrintNestedLine(viewer, selfPerfInfo, countsPerCall, parentCount, depth+1, selfname, totalTime, &childWasPrinted);CHKERRQ(ierr); 
+        ierr = PetscLogPrintNestedLine(viewer, selfPerfInfo, countsPerCall, parentCount, depth+1, selfname, totalTime, &childWasPrinted);CHKERRQ(ierr);
+        ierr = PetscFree(selfname);CHKERRQ(ierr);
         if (childWasPrinted) {
           ierr = PetscViewerXMLEndSection(viewer,"event");CHKERRQ(ierr);
         }
       } else if (children[i].id==-2) {
-        /* output for 'other' */
-        char otherName[15+strlen(name)];
+        size_t  len;
+        char    *otherName;
+
+        ierr = PetscStrlen(name,&len);CHKERRQ(ierr);
+        ierr = PetscMalloc1(16+len,&otherName);CHKERRQ(ierr);
         sprintf(otherName,"%s: other-timed",name);
         ierr = PetscLogPrintNestedLine(viewer, otherPerfInfo, 1, 1, depth+1, otherName, totalTime, &childWasPrinted);CHKERRQ(ierr); 
+        ierr = PetscFree(otherName);CHKERRQ(ierr);
         if (childWasPrinted) {
           ierr = PetscViewerXMLEndSection(viewer,"event");CHKERRQ(ierr);
         }
