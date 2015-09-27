@@ -682,15 +682,9 @@ PetscErrorCode MatAssemblyBegin_MPIAIJ(Mat mat,MatAssemblyType mode)
   Mat_MPIAIJ     *aij = (Mat_MPIAIJ*)mat->data;
   PetscErrorCode ierr;
   PetscInt       nstash,reallocs;
-  InsertMode     addv;
 
   PetscFunctionBegin;
   if (aij->donotstash || mat->nooffprocentries) PetscFunctionReturn(0);
-
-  /* make sure all processors are either in INSERTMODE or ADDMODE */
-  ierr = MPI_Allreduce((PetscEnum*)&mat->insertmode,(PetscEnum*)&addv,1,MPIU_ENUM,MPI_BOR,PetscObjectComm((PetscObject)mat));CHKERRQ(ierr);
-  if (addv == (ADD_VALUES|INSERT_VALUES)) SETERRQ(PetscObjectComm((PetscObject)mat),PETSC_ERR_ARG_WRONGSTATE,"Some processors inserted others added");
-  mat->insertmode = addv; /* in case this processor had no cache */
 
   ierr = MatStashScatterBegin_Private(mat,&mat->stash,mat->rmap->range);CHKERRQ(ierr);
   ierr = MatStashGetInfo_Private(&mat->stash,&nstash,&reallocs);CHKERRQ(ierr);
@@ -710,7 +704,6 @@ PetscErrorCode MatAssemblyEnd_MPIAIJ(Mat mat,MatAssemblyType mode)
   PetscInt       *row,*col;
   PetscBool      other_disassembled;
   PetscScalar    *val;
-  InsertMode     addv = mat->insertmode;
 
   /* do not use 'b = (Mat_SeqAIJ*)aij->B->data' as B can be reset in disassembly */
 
@@ -728,7 +721,7 @@ PetscErrorCode MatAssemblyEnd_MPIAIJ(Mat mat,MatAssemblyType mode)
         if (j < n) ncols = j-i;
         else       ncols = n-i;
         /* Now assemble all these values with a single function call */
-        ierr = MatSetValues_MPIAIJ(mat,1,row+i,ncols,col+i,val+i,addv);CHKERRQ(ierr);
+        ierr = MatSetValues_MPIAIJ(mat,1,row+i,ncols,col+i,val+i,mat->insertmode);CHKERRQ(ierr);
 
         i = j;
       }
@@ -1348,7 +1341,7 @@ PetscErrorCode MatView_MPIAIJ_ASCIIorDraworSocket(Mat mat,PetscViewer viewer)
       ierr = MPI_Comm_rank(PetscObjectComm((PetscObject)mat),&rank);CHKERRQ(ierr);
       ierr = MatGetInfo(mat,MAT_LOCAL,&info);CHKERRQ(ierr);
       ierr = MatInodeGetInodeSizes(aij->A,NULL,(PetscInt**)&inodes,NULL);CHKERRQ(ierr);
-      ierr = PetscViewerASCIISynchronizedAllow(viewer,PETSC_TRUE);CHKERRQ(ierr);
+      ierr = PetscViewerASCIIPushSynchronized(viewer);CHKERRQ(ierr);
       if (!inodes) {
         ierr = PetscViewerASCIISynchronizedPrintf(viewer,"[%d] Local rows %D nz %D nz alloced %D mem %D, not using I-node routines\n",
                                                   rank,mat->rmap->n,(PetscInt)info.nz_used,(PetscInt)info.nz_allocated,(PetscInt)info.memory);CHKERRQ(ierr);
@@ -1361,7 +1354,7 @@ PetscErrorCode MatView_MPIAIJ_ASCIIorDraworSocket(Mat mat,PetscViewer viewer)
       ierr = MatGetInfo(aij->B,MAT_LOCAL,&info);CHKERRQ(ierr);
       ierr = PetscViewerASCIISynchronizedPrintf(viewer,"[%d] off-diagonal part: nz %D \n",rank,(PetscInt)info.nz_used);CHKERRQ(ierr);
       ierr = PetscViewerFlush(viewer);CHKERRQ(ierr);
-      ierr = PetscViewerASCIISynchronizedAllow(viewer,PETSC_FALSE);CHKERRQ(ierr);
+      ierr = PetscViewerASCIIPopSynchronized(viewer);CHKERRQ(ierr);
       ierr = PetscViewerASCIIPrintf(viewer,"Information on VecScatter used in matrix-vector product: \n");CHKERRQ(ierr);
       ierr = VecScatterView(aij->Mvctx,viewer);CHKERRQ(ierr);
       PetscFunctionReturn(0);
@@ -1443,12 +1436,13 @@ PetscErrorCode MatView_MPIAIJ_ASCIIorDraworSocket(Mat mat,PetscViewer viewer)
        Everyone has to call to draw the matrix since the graphics waits are
        synchronized across all processors that share the PetscDraw object
     */
-    ierr = PetscViewerGetSingleton(viewer,&sviewer);CHKERRQ(ierr);
+    ierr = PetscViewerGetSubViewer(viewer,PETSC_COMM_SELF,&sviewer);CHKERRQ(ierr);
     if (!rank) {
       ierr = PetscObjectSetName((PetscObject)((Mat_MPIAIJ*)(A->data))->A,((PetscObject)mat)->name);CHKERRQ(ierr);
       ierr = MatView_SeqAIJ(((Mat_MPIAIJ*)(A->data))->A,sviewer);CHKERRQ(ierr);
     }
-    ierr = PetscViewerRestoreSingleton(viewer,&sviewer);CHKERRQ(ierr);
+    ierr = PetscViewerRestoreSubViewer(viewer,PETSC_COMM_SELF,&sviewer);CHKERRQ(ierr);
+    ierr = PetscViewerFlush(viewer);CHKERRQ(ierr);
     ierr = MatDestroy(&A);CHKERRQ(ierr);
   }
   PetscFunctionReturn(0);
@@ -2484,6 +2478,56 @@ static PetscErrorCode  MatSetRandom_MPIAIJ(Mat x,PetscRandom rctx)
 }
 
 #undef __FUNCT__
+#define __FUNCT__ "MatMPIAIJSetUseScalableIncreaseOverlap_MPIAIJ"
+PetscErrorCode MatMPIAIJSetUseScalableIncreaseOverlap_MPIAIJ(Mat A,PetscBool sc)
+{
+  PetscFunctionBegin;
+  if (sc) A->ops->increaseoverlap = MatIncreaseOverlap_MPIAIJ_Scalable;
+  else A->ops->increaseoverlap    = MatIncreaseOverlap_MPIAIJ;
+  PetscFunctionReturn(0);
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "MatMPIAIJSetUseScalableIncreaseOverlap"
+/*@
+   MatMPIAIJSetUseScalableIncreaseOverlap - Determine if the matrix uses a scalable algorithm to compute the overlap
+
+   Collective on Mat
+
+   Input Parameters:
++    A - the matrix
+-    sc - PETSC_TRUE indicates use the scalable algorithm (default is not to use the scalable algorithm)
+
+@*/
+PetscErrorCode MatMPIAIJSetUseScalableIncreaseOverlap(Mat A,PetscBool sc)
+{
+  PetscErrorCode       ierr;
+
+  PetscFunctionBegin;
+  ierr = PetscTryMethod(A,"MatMPIAIJSetUseScalableIncreaseOverlap_C",(Mat,PetscBool),(A,sc));CHKERRQ(ierr);
+  PetscFunctionReturn(0);
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "MatSetFromOptions_MPIAIJ"
+PetscErrorCode MatSetFromOptions_MPIAIJ(PetscOptions *PetscOptionsObject,Mat A)
+{
+  PetscErrorCode       ierr;
+  PetscBool            sc = PETSC_FALSE,flg;
+
+  PetscFunctionBegin;
+  ierr = PetscOptionsHead(PetscOptionsObject,"MPIAIJ options");CHKERRQ(ierr);
+  ierr = PetscObjectOptionsBegin((PetscObject)A);
+    if (A->ops->increaseoverlap == MatIncreaseOverlap_MPIAIJ_Scalable) sc = PETSC_TRUE;
+    ierr = PetscOptionsBool("-mat_increase_overlap_scalable","Use a scalable algorithm to compute the overlap","MatIncreaseOverlap",sc,&sc,&flg);CHKERRQ(ierr);
+    if (flg) {
+      ierr = MatMPIAIJSetUseScalableIncreaseOverlap(A,sc);CHKERRQ(ierr);
+    }
+  ierr = PetscOptionsEnd();CHKERRQ(ierr);
+  PetscFunctionReturn(0);
+}
+
+#undef __FUNCT__
 #define __FUNCT__ "MatShift_MPIAIJ"
 PetscErrorCode MatShift_MPIAIJ(Mat Y,PetscScalar a)
 {
@@ -2578,7 +2622,7 @@ static struct _MatOps MatOps_Values = {MatSetValues_MPIAIJ,
                                        0,
                                        MatSetValuesAdifor_MPIAIJ,
                                 /*75*/ MatFDColoringApply_AIJ,
-                                       0,
+                                       MatSetFromOptions_MPIAIJ,
                                        0,
                                        0,
                                        MatFindZeroDiagonals_MPIAIJ,
@@ -2979,7 +3023,7 @@ PetscErrorCode MatLoad_MPIAIJ(Mat newMat, PetscViewer viewer)
 
 #undef __FUNCT__
 #define __FUNCT__ "MatGetSubMatrix_MPIAIJ"
-/* TODO: Not scalable because of ISAllGather(). */
+/* TODO: Not scalable because of ISAllGather() unless getting all columns. */
 PetscErrorCode MatGetSubMatrix_MPIAIJ(Mat mat,IS isrow,IS iscol,MatReuse call,Mat *newmat)
 {
   PetscErrorCode ierr;
@@ -2992,10 +3036,30 @@ PetscErrorCode MatGetSubMatrix_MPIAIJ(Mat mat,IS isrow,IS iscol,MatReuse call,Ma
     ierr = PetscObjectQuery((PetscObject)*newmat,"ISAllGather",(PetscObject*)&iscol_local);CHKERRQ(ierr);
     if (!iscol_local) SETERRQ(PETSC_COMM_SELF,PETSC_ERR_ARG_WRONGSTATE,"Submatrix passed in was not used before, cannot reuse");
   } else {
-    PetscInt cbs;
-    ierr = ISGetBlockSize(iscol,&cbs);CHKERRQ(ierr);
-    ierr = ISAllGather(iscol,&iscol_local);CHKERRQ(ierr);
-    ierr = ISSetBlockSize(iscol_local,cbs);CHKERRQ(ierr);
+    /* check if we are grabbing all columns*/
+    PetscBool    isstride;
+    PetscMPIInt  lisstride = 0,gisstride;
+    ierr = PetscObjectTypeCompare((PetscObject)iscol,ISSTRIDE,&isstride);CHKERRQ(ierr);
+    if (isstride) {
+      PetscInt  start,len,mstart,mlen;
+      ierr = ISStrideGetInfo(iscol,&start,NULL);CHKERRQ(ierr);
+      ierr = ISGetLocalSize(iscol,&len);CHKERRQ(ierr);
+      ierr = MatGetOwnershipRangeColumn(mat,&mstart,&mlen);CHKERRQ(ierr);
+      if (mstart == start && mlen-mstart == len) lisstride = 1;
+    }
+    ierr = MPI_Allreduce(&lisstride,&gisstride,1,MPI_INT,MPI_MIN,PetscObjectComm((PetscObject)mat));CHKERRQ(ierr);
+    if (gisstride) {
+      PetscInt N;
+      ierr = MatGetSize(mat,NULL,&N);CHKERRQ(ierr);
+      ierr = ISCreateStride(PetscObjectComm((PetscObject)mat),N,0,1,&iscol_local);CHKERRQ(ierr);
+      ierr = ISSetIdentity(iscol_local);CHKERRQ(ierr);
+      ierr = PetscInfo(mat,"Optimizing for obtaining all columns of the matrix; skipping ISAllGather()\n");CHKERRQ(ierr);
+    } else {
+      PetscInt cbs;
+      ierr = ISGetBlockSize(iscol,&cbs);CHKERRQ(ierr);
+      ierr = ISAllGather(iscol,&iscol_local);CHKERRQ(ierr);
+      ierr = ISSetBlockSize(iscol_local,cbs);CHKERRQ(ierr);
+    }
   }
   ierr = MatGetSubMatrix_MPIAIJ_Private(mat,isrow,iscol_local,csize,call,newmat);CHKERRQ(ierr);
   if (call == MAT_INITIAL_MATRIX) {
@@ -3036,6 +3100,7 @@ PetscErrorCode MatGetSubMatrix_MPIAIJ_Private(Mat mat,IS isrow,IS iscol,PetscInt
   ierr = ISGetLocalSize(iscol,&ncol);CHKERRQ(ierr);
   if (colflag && ncol == mat->cmap->N) {
     allcolumns = PETSC_TRUE;
+    ierr = PetscInfo(mat,"Optimizing for obtaining all columns of the matrix\n");CHKERRQ(ierr);
   } else {
     allcolumns = PETSC_FALSE;
   }
@@ -4973,6 +5038,7 @@ PETSC_EXTERN PetscErrorCode MatCreate_MPIAIJ(Mat B)
   /* flexible pointer used in CUSP/CUSPARSE classes */
   b->spptr = NULL;
 
+  ierr = PetscObjectComposeFunction((PetscObject)B,"MatMPIAIJSetUseScalableIncreaseOverlap_C",MatMPIAIJSetUseScalableIncreaseOverlap_MPIAIJ);CHKERRQ(ierr);
   ierr = PetscObjectComposeFunction((PetscObject)B,"MatStoreValues_C",MatStoreValues_MPIAIJ);CHKERRQ(ierr);
   ierr = PetscObjectComposeFunction((PetscObject)B,"MatRetrieveValues_C",MatRetrieveValues_MPIAIJ);CHKERRQ(ierr);
   ierr = PetscObjectComposeFunction((PetscObject)B,"MatGetDiagonalBlock_C",MatGetDiagonalBlock_MPIAIJ);CHKERRQ(ierr);

@@ -71,6 +71,7 @@ typedef const char* MatType;
 #define MATDAAD            "daad"
 #define MATMFFD            "mffd"
 #define MATNORMAL          "normal"
+#define MATNORMALHERMITIAN "normalh"
 #define MATLRC             "lrc"
 #define MATSCATTER         "scatter"
 #define MATBLOCKMAT        "blockmat"
@@ -222,6 +223,7 @@ PETSC_EXTERN PetscErrorCode MatXAIJSetPreallocation(Mat,PetscInt,const PetscInt[
 
 PETSC_EXTERN PetscErrorCode MatCreateShell(MPI_Comm,PetscInt,PetscInt,PetscInt,PetscInt,void *,Mat*);
 PETSC_EXTERN PetscErrorCode MatCreateNormal(Mat,Mat*);
+PETSC_EXTERN PetscErrorCode MatCreateNormalHermitian(Mat,Mat*);
 PETSC_EXTERN PetscErrorCode MatCreateLRC(Mat,Mat,Mat,Mat*);
 PETSC_EXTERN PetscErrorCode MatCreateIS(MPI_Comm,PetscInt,PetscInt,PetscInt,PetscInt,PetscInt,ISLocalToGlobalMapping,ISLocalToGlobalMapping,Mat*);
 PETSC_EXTERN PetscErrorCode MatCreateSeqAIJCRL(MPI_Comm,PetscInt,PetscInt,PetscInt,const PetscInt[],Mat*);
@@ -343,7 +345,8 @@ typedef enum {MAT_OPTION_MIN = -3,
               MAT_NO_OFF_PROC_ENTRIES = 17,
               MAT_NEW_NONZERO_LOCATIONS = 18,
               MAT_NEW_NONZERO_ALLOCATION_ERR = 19,
-              MAT_OPTION_MAX = 20} MatOption;
+              MAT_SUBSET_OFF_PROC_ENTRIES = 20,
+              MAT_OPTION_MAX = 21} MatOption;
 
 PETSC_EXTERN const char *MatOptions[];
 PETSC_EXTERN PetscErrorCode MatSetOption(Mat,MatOption,PetscBool);
@@ -507,6 +510,8 @@ PETSC_EXTERN PetscErrorCode MatGetBrowsOfAcols(Mat,Mat,MatReuse,IS*,IS*,Mat*);
 PETSC_EXTERN PetscErrorCode MatGetGhosts(Mat, PetscInt *,const PetscInt *[]);
 
 PETSC_EXTERN PetscErrorCode MatIncreaseOverlap(Mat,PetscInt,IS[],PetscInt);
+PETSC_EXTERN PetscErrorCode MatIncreaseOverlapSplit(Mat mat,PetscInt n,IS is[],PetscInt ov);
+PETSC_EXTERN PetscErrorCode MatMPIAIJSetUseScalableIncreaseOverlap(Mat,PetscBool);
 
 PETSC_EXTERN PetscErrorCode MatMatMult(Mat,Mat,MatReuse,PetscReal,Mat*);
 PETSC_EXTERN PetscErrorCode MatMatMultSymbolic(Mat,Mat,PetscReal,Mat*);
@@ -1192,11 +1197,13 @@ dm
 J*/
 typedef const char* MatPartitioningType;
 #define MATPARTITIONINGCURRENT  "current"
+#define MATPARTITIONINGAVERAGE   "average"
 #define MATPARTITIONINGSQUARE   "square"
 #define MATPARTITIONINGPARMETIS "parmetis"
 #define MATPARTITIONINGCHACO    "chaco"
 #define MATPARTITIONINGPARTY    "party"
 #define MATPARTITIONINGPTSCOTCH "ptscotch"
+#define MATPARTITIONINGHIERARCH  "hierarch"
 
 
 PETSC_EXTERN PetscErrorCode MatPartitioningCreate(MPI_Comm,MatPartitioning*);
@@ -1216,6 +1223,7 @@ PETSC_EXTERN PetscErrorCode MatPartitioningView(MatPartitioning,PetscViewer);
 PETSC_EXTERN PetscErrorCode MatPartitioningSetFromOptions(MatPartitioning);
 PETSC_EXTERN PetscErrorCode MatPartitioningGetType(MatPartitioning,MatPartitioningType*);
 
+PETSC_EXTERN PetscErrorCode MatPartitioningParmetisSetRepartition(MatPartitioning part);
 PETSC_EXTERN PetscErrorCode MatPartitioningParmetisSetCoarseSequential(MatPartitioning);
 PETSC_EXTERN PetscErrorCode MatPartitioningParmetisGetEdgeCut(MatPartitioning, PetscInt *);
 
@@ -1262,6 +1270,14 @@ PETSC_EXTERN PetscErrorCode MatPartitioningPTScotchSetImbalance(MatPartitioning,
 PETSC_EXTERN PetscErrorCode MatPartitioningPTScotchGetImbalance(MatPartitioning,PetscReal*);
 PETSC_EXTERN PetscErrorCode MatPartitioningPTScotchSetStrategy(MatPartitioning,MPPTScotchStrategyType);
 PETSC_EXTERN PetscErrorCode MatPartitioningPTScotchGetStrategy(MatPartitioning,MPPTScotchStrategyType*);
+
+/*
+ * hierarchical partitioning
+ */
+PETSC_EXTERN PetscErrorCode MatPartitioningHierarchicalGetFineparts(MatPartitioning,IS*);
+PETSC_EXTERN PetscErrorCode MatPartitioningHierarchicalGetCoarseparts(MatPartitioning,IS*);
+PETSC_EXTERN PetscErrorCode MatPartitioningHierarchicalSetNcoarseparts(MatPartitioning,PetscInt);
+PETSC_EXTERN PetscErrorCode MatPartitioningHierarchicalSetNfineparts(MatPartitioning, PetscInt);
 
 /*
     These routines are for coarsening matrices:

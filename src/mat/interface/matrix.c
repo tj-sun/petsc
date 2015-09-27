@@ -864,7 +864,7 @@ PetscErrorCode  MatView(Mat mat,PetscViewer viewer)
       if (mat->ops->getinfo) {
         MatInfo info;
         ierr = MatGetInfo(mat,MAT_GLOBAL_SUM,&info);CHKERRQ(ierr);
-        ierr = PetscViewerASCIIPrintf(viewer,"total: nonzeros=%g, allocated nonzeros=%g\n",info.nz_used,info.nz_allocated);CHKERRQ(ierr);
+        ierr = PetscViewerASCIIPrintf(viewer,"total: nonzeros=%.f, allocated nonzeros=%.f\n",info.nz_used,info.nz_allocated);CHKERRQ(ierr);
         ierr = PetscViewerASCIIPrintf(viewer,"total number of mallocs used during MatSetValues calls =%D\n",(PetscInt)info.mallocs);CHKERRQ(ierr);
       }
       if (mat->nullsp) {ierr = PetscViewerASCIIPrintf(viewer,"  has attached null space\n");CHKERRQ(ierr);}
@@ -5186,9 +5186,12 @@ PetscErrorCode  MatAssemblyEnd(Mat mat,MatAssemblyType type)
 .    MAT_IGNORE_OFF_PROC_ENTRIES - drops off-processor entries
 .    MAT_NEW_NONZERO_LOCATION_ERR - generates an error for new matrix entry
 .    MAT_USE_HASH_TABLE - uses a hash table to speed up matrix assembly
-+    MAT_NO_OFF_PROC_ENTRIES - you know each process will only set values for its own rows, will generate an error if
+.    MAT_NO_OFF_PROC_ENTRIES - you know each process will only set values for its own rows, will generate an error if
         any process sets values for another process. This avoids all reductions in the MatAssembly routines and thus improves
         performance for very large process counts.
+-    MAT_SUBSET_OFF_PROC_ENTRIES - you know that the first assembly after setting this flag will set a superset
+        of the off-process entries required for all subsequent assemblies. This avoids a rendezvous step in the MatAssembly
+        functions, instead sending only neighbor messages.
 
    Notes:
    Except for MAT_UNUSED_NONZERO_LOCATION_ERR and  MAT_ROW_ORIENTED all processes that share the matrix must pass the same value in flg!
@@ -5275,6 +5278,9 @@ PetscErrorCode  MatSetOption(Mat mat,MatOption op,PetscBool flg)
     mat->nooffprocentries = flg;
     PetscFunctionReturn(0);
     break;
+  case MAT_SUBSET_OFF_PROC_ENTRIES:
+    mat->subsetoffprocentries = flg;
+    PetscFunctionReturn(0);
   case MAT_NO_OFF_PROC_ZERO_ROWS:
     mat->nooffproczerorows = flg;
     PetscFunctionReturn(0);
@@ -6789,6 +6795,9 @@ PetscErrorCode  MatDestroySeqNonzeroStructure(Mat *mat)
 .  is  - the array of index sets (these index sets will changed during the call)
 -  ov  - the additional overlap requested
 
+   Options Database:
+.  -mat_increase_overlap_scalable - use a scalable algorithm to compute the overlap (supported by MPIAIJ matrix)
+
    Level: developer
 
    Concepts: overlap
@@ -6819,6 +6828,62 @@ PetscErrorCode  MatIncreaseOverlap(Mat mat,PetscInt n,IS is[],PetscInt ov)
   ierr = PetscLogEventEnd(MAT_IncreaseOverlap,mat,0,0,0);CHKERRQ(ierr);
   PetscFunctionReturn(0);
 }
+
+
+PetscErrorCode  MatIncreaseOverlapSplit_Single(Mat,IS*,PetscInt);
+
+#undef __FUNCT__
+#define __FUNCT__ "MatIncreaseOverlapSplit"
+/*@
+   MatIncreaseOverlapSplit - Given a set of submatrices indicated by index sets across
+   a sub communicator, replaces the index sets by larger ones that represent submatrices with
+   additional overlap.
+
+   Collective on Mat
+
+   Input Parameters:
++  mat - the matrix
+.  n   - the number of index sets
+.  is  - the array of index sets (these index sets will changed during the call)
+-  ov  - the additional overlap requested
+
+   Options Database:
+.  -mat_increase_overlap_scalable - use a scalable algorithm to compute the overlap (supported by MPIAIJ matrix)
+
+   Level: developer
+
+   Concepts: overlap
+   Concepts: ASM^computing overlap
+
+.seealso: MatGetSubMatrices()
+@*/
+PetscErrorCode  MatIncreaseOverlapSplit(Mat mat,PetscInt n,IS is[],PetscInt ov)
+{
+  PetscInt       i;
+  PetscErrorCode ierr;
+
+  PetscFunctionBegin;
+  PetscValidHeaderSpecific(mat,MAT_CLASSID,1);
+  PetscValidType(mat,1);
+  if (n < 0) SETERRQ1(PETSC_COMM_SELF,PETSC_ERR_ARG_OUTOFRANGE,"Must have one or more domains, you have %D",n);
+  if (n) {
+    PetscValidPointer(is,3);
+    PetscValidHeaderSpecific(*is,IS_CLASSID,3);
+  }
+  if (!mat->assembled) SETERRQ(PetscObjectComm((PetscObject)mat),PETSC_ERR_ARG_WRONGSTATE,"Not for unassembled matrix");
+  if (mat->factortype) SETERRQ(PetscObjectComm((PetscObject)mat),PETSC_ERR_ARG_WRONGSTATE,"Not for factored matrix");
+  MatCheckPreallocated(mat,1);
+  if (!ov) PetscFunctionReturn(0);
+  ierr = PetscLogEventBegin(MAT_IncreaseOverlap,mat,0,0,0);CHKERRQ(ierr);
+  for(i=0; i<n; i++){
+	ierr =  MatIncreaseOverlapSplit_Single(mat,&is[i],ov);CHKERRQ(ierr);
+  }
+  ierr = PetscLogEventEnd(MAT_IncreaseOverlap,mat,0,0,0);CHKERRQ(ierr);
+  PetscFunctionReturn(0);
+}
+
+
+
 
 #undef __FUNCT__
 #define __FUNCT__ "MatGetBlockSize"
@@ -10105,7 +10170,7 @@ PetscErrorCode MatCreateMPIMatConcatenateSeqMat(MPI_Comm comm,Mat seqmat,PetscIn
 PetscErrorCode  MatSubdomainsCreateCoalesce(Mat A,PetscInt N,PetscInt *n,IS *iss[])
 {
   MPI_Comm        comm,subcomm;
-  PetscMPIInt     size,rank,color,subsize,subrank;
+  PetscMPIInt     size,rank,color;
   PetscInt        rstart,rend,k;
   PetscErrorCode  ierr;
 
@@ -10118,10 +10183,8 @@ PetscErrorCode  MatSubdomainsCreateCoalesce(Mat A,PetscInt N,PetscInt *n,IS *iss
   k = ((PetscInt)size)/N + ((PetscInt)size%N>0); /* There are up to k ranks to a color */
   color = rank/k;
   ierr = MPI_Comm_split(comm,color,rank,&subcomm);CHKERRQ(ierr);
-  ierr = MPI_Comm_size(subcomm,&subsize);CHKERRQ(ierr);
-  ierr = MPI_Comm_size(subcomm,&subrank);CHKERRQ(ierr);
   ierr = PetscMalloc1(1,iss);CHKERRQ(ierr);
   ierr = MatGetOwnershipRange(A,&rstart,&rend);CHKERRQ(ierr);
-  ierr = ISCreateStride(subcomm,rend-rstart,rstart,1,*iss);CHKERRQ(ierr);
+  ierr = ISCreateStride(subcomm,rend-rstart,rstart,1,iss[0]);CHKERRQ(ierr);
   PetscFunctionReturn(0);
 }
