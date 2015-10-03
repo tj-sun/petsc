@@ -53,7 +53,7 @@
 
       external FormFunction
 
-      zero = 0.0d0
+      zero = 0.0
 
 !  Initialize TAO and PETSc
       call PetscInitialize(PETSC_NULL_CHARACTER,ierr)
