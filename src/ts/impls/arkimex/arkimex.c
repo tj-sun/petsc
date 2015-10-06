@@ -674,7 +674,7 @@ static PetscErrorCode TSRollBack_ARKIMEX(TS ts)
   const PetscInt  s    = tab->s;
   const PetscReal *bt = tab->bt,*b = tab->b;
   PetscScalar     *w   = ark->work;
-  Vec             *YdotI = ark->YdotI,*YdotRHS = ark->YdotRHS;
+  Vec             Ydot0 = ark->Ydot0,*YdotI = ark->YdotI,*YdotRHS = ark->YdotRHS;
   PetscInt        j;
   PetscReal       h=ts->time_step;
   PetscErrorCode  ierr;
@@ -682,6 +682,9 @@ static PetscErrorCode TSRollBack_ARKIMEX(TS ts)
   PetscFunctionBegin;
   for (j=0; j<s; j++) w[j] = -h*bt[j];
   ierr = VecMAXPY(ts->vec_sol,s,w,YdotI);CHKERRQ(ierr);
+  if (ts->equation_type>=TS_EQ_IMPLICIT) { /* restore the initial slope*/
+    ierr = VecCopy(Ydot0,YdotI[0]);CHKERRQ(ierr);
+  }
   for (j=0; j<s; j++) w[j] = -h*b[j];
   ierr = VecMAXPY(ts->vec_sol,s,w,YdotRHS);CHKERRQ(ierr);
   ark->status   = TS_STEP_INCOMPLETE;
