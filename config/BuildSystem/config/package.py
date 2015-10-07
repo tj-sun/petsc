@@ -975,7 +975,7 @@ Brief overview of how BuildSystem\'s configuration of packages works.
   The main contribution is in the implementation of a generic Install method, which attempts
   to automate the building of a package based on the mostly standard instance variables.
 
-  
+
   Besides running GNU configure, GNUPackage.Install runs installNeeded, make and postInstall
   at the appropriate times, automatically determining whether a rebuild is necessary, saving
   a GNU configure arguments stamp to perform the check in the future, etc.
@@ -1034,6 +1034,7 @@ class GNUPackage(Package):
     args.append('CFLAGS="'+self.removeWarningFlags(self.getCompilerFlags())+'"')
     args.append('AR="'+self.setCompilers.AR+'"')
     args.append('ARFLAGS="'+self.setCompilers.AR_FLAGS+'"')
+    args.append('LDFLAGS="'+self.getLinkerFlags())+'"')
     self.popLanguage()
     if hasattr(self.compilers, 'CXX'):
       self.pushLanguage('Cxx')
@@ -1138,7 +1139,7 @@ class CMakePackage(Package):
   def formCMakeConfigureArgs(self):
     import os
     import shlex
- 
+
     args = ['-DCMAKE_INSTALL_PREFIX='+self.installDir]
     args.append('-DCMAKE_VERBOSE_MAKEFILE=1')
     self.framework.pushLanguage('C')
