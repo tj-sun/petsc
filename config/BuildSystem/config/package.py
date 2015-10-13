@@ -1020,7 +1020,8 @@ class GNUPackage(Package):
     args.append('CFLAGS="'+self.removeWarningFlags(self.getCompilerFlags())+'"')
     args.append('AR="'+self.setCompilers.AR+'"')
     args.append('ARFLAGS="'+self.setCompilers.AR_FLAGS+'"')
-    args.append('LDFLAGS="'+self.getLinkerFlags()+'"')
+    if self.setCompilers.LDFLAGS:
+      args.append('LDFLAGS="'+self.setCompilers.LDFLAGS+'"')
     self.popLanguage()
     if hasattr(self.compilers, 'CXX'):
       self.pushLanguage('Cxx')
