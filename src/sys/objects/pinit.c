@@ -780,6 +780,7 @@ PetscErrorCode  PetscInitialize(int *argc,char ***args,const char file[],const c
   ierr = PetscSpinlockCreate(&PetscViewerASCIISpinLockStdout);CHKERRQ(ierr);
   ierr = PetscSpinlockCreate(&PetscViewerASCIISpinLockStderr);CHKERRQ(ierr);
   ierr = PetscSpinlockCreate(&PetscCommSpinLock);CHKERRQ(ierr);
+  ierr = PetscSpinlockCreate(&PetscKeyvalCreateSpinLock);CHKERRQ(ierr);
 
   if (PETSC_COMM_WORLD == MPI_COMM_NULL) PETSC_COMM_WORLD = MPI_COMM_WORLD;
   ierr = MPI_Comm_set_errhandler(PETSC_COMM_WORLD,MPI_ERRORS_RETURN);CHKERRQ(ierr);
@@ -849,9 +850,9 @@ PetscErrorCode  PetscInitialize(int *argc,char ***args,const char file[],const c
   /*
      Attributes to be set on PETSc communicators
   */
-  ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelCounter,&Petsc_Counter_keyval,(void*)0);CHKERRQ(ierr);
-  ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelComm_Outer,&Petsc_InnerComm_keyval,(void*)0);CHKERRQ(ierr);
-  ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelComm_Inner,&Petsc_OuterComm_keyval,(void*)0);CHKERRQ(ierr);
+  ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelCounter,&Petsc_Counter_keyval,NULL);CHKERRQ(ierr);
+  ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelComm_Outer,&Petsc_InnerComm_keyval,NULL);CHKERRQ(ierr);
+  ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelComm_Inner,&Petsc_OuterComm_keyval,NULL);CHKERRQ(ierr);
 
   /*
      Build the options database
@@ -1393,6 +1394,7 @@ PetscErrorCode  PetscFinalize(void)
   ierr = PetscSpinlockDestroy(&PetscViewerASCIISpinLockStdout);CHKERRQ(ierr);
   ierr = PetscSpinlockDestroy(&PetscViewerASCIISpinLockStderr);CHKERRQ(ierr);
   ierr = PetscSpinlockDestroy(&PetscCommSpinLock);CHKERRQ(ierr);
+  ierr = PetscSpinlockDestroy(&PetscKeyvalCreateSpinLock);CHKERRQ(ierr);
 
   if (PetscBeganMPI) {
 #if defined(PETSC_HAVE_MPI_FINALIZED)

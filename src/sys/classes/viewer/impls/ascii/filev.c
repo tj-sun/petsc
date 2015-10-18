@@ -52,10 +52,7 @@ PetscErrorCode PetscViewerDestroy_ASCII(PetscViewer viewer)
   ierr = PetscViewerFileClose_ASCII(viewer);CHKERRQ(ierr);
   ierr = PetscFree(vascii);CHKERRQ(ierr);
 
-  /* remove the viewer from the list in the MPI Communicator */
-  if (Petsc_Viewer_keyval == MPI_KEYVAL_INVALID) {
-    ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelViewer,&Petsc_Viewer_keyval,(void*)0);CHKERRQ(ierr);
-  }
+  ierr = MPIU_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelViewer,&Petsc_Viewer_keyval,NULL);CHKERRQ(ierr);
 
   ierr = MPI_Attr_get(PetscObjectComm((PetscObject)viewer),Petsc_Viewer_keyval,(void**)&vlink,(PetscMPIInt*)&flg);CHKERRQ(ierr);
   if (flg) {

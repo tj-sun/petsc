@@ -232,6 +232,7 @@ PetscSpinlock PetscViewerASCIISpinLockOpen;
 PetscSpinlock PetscViewerASCIISpinLockStdout;
 PetscSpinlock PetscViewerASCIISpinLockStderr;
 PetscSpinlock PetscCommSpinLock;
+PetscSpinlock PetscKeyvalCreateSpinLock;
 #endif
 
 /* -----------------------------------------------------------------------------------------------*/
@@ -336,6 +337,8 @@ PETSC_EXTERN void PETSC_STDCALL petscinitialize_(CHAR filename PETSC_MIXED_LEN(l
   *ierr = PetscSpinlockCreate(&PetscViewerASCIISpinLockStderr);
   if (*ierr) {(*PetscErrorPrintf)("PetscInitialize: Creating global spin lock\n");return;}
   *ierr = PetscSpinlockCreate(&PetscCommSpinLock);
+  if (*ierr) {(*PetscErrorPrintf)("PetscInitialize: Creating global spin lock\n");return;}
+  *ierr = PetscSpinlockCreate(&PetscKeyvalCreateSpinLock);
   if (*ierr) {(*PetscErrorPrintf)("PetscInitialize: Creating global spin lock\n");return;}
 
   *ierr = PetscErrorPrintfInitialize();

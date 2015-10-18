@@ -1,4 +1,5 @@
 
+#include <petsc/private/petscimpl.h>
 #include <petscsys.h>        /*I  "petscsys.h"  I*/
 /*
     Note that tag of 0 is ok because comm is a private communicator
@@ -104,9 +105,7 @@ PetscErrorCode  PetscSequentialPhaseBegin(MPI_Comm comm,int ng)
   if (size == 1) PetscFunctionReturn(0);
 
   /* Get the private communicator for the sequential operations */
-  if (Petsc_Seq_keyval == MPI_KEYVAL_INVALID) {
-    ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,MPI_NULL_DELETE_FN,&Petsc_Seq_keyval,0);CHKERRQ(ierr);
-  }
+  ierr = MPIU_Keyval_create(MPI_NULL_COPY_FN,MPI_NULL_DELETE_FN,&Petsc_Seq_keyval,NULL);CHKERRQ(ierr);
 
   ierr = MPI_Comm_dup(comm,&local_comm);CHKERRQ(ierr);
   ierr = PetscMalloc1(1,&addr_local_comm);CHKERRQ(ierr);

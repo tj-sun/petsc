@@ -38,9 +38,7 @@ PetscErrorCode  PetscViewerASCIIGetStdout(MPI_Comm comm,PetscViewer *viewer)
   PetscFunctionBegin;
   ierr = PetscSpinlockLock(&PetscViewerASCIISpinLockStdout);CHKERRQ(ierr);
   ierr = PetscCommDuplicate(comm,&ncomm,NULL);CHKERRQ(ierr);
-  if (Petsc_Viewer_Stdout_keyval == MPI_KEYVAL_INVALID) {
-    ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,MPI_NULL_DELETE_FN,&Petsc_Viewer_Stdout_keyval,0);CHKERRQ(ierr);
-  }
+  ierr = MPIU_Keyval_create(MPI_NULL_COPY_FN,MPI_NULL_DELETE_FN,&Petsc_Viewer_Stdout_keyval,0);CHKERRQ(ierr);
   ierr = MPI_Attr_get(ncomm,Petsc_Viewer_Stdout_keyval,(void**)viewer,(PetscMPIInt*)&flg);CHKERRQ(ierr);
   if (!flg) { /* PetscViewer not yet created */
     ierr = PetscViewerASCIIOpen(ncomm,"stdout",viewer);CHKERRQ(ierr);
@@ -122,9 +120,7 @@ PetscErrorCode  PetscViewerASCIIGetStderr(MPI_Comm comm,PetscViewer *viewer)
   PetscFunctionBegin;
   ierr = PetscSpinlockLock(&PetscViewerASCIISpinLockStderr);CHKERRQ(ierr);
   ierr = PetscCommDuplicate(comm,&ncomm,NULL);CHKERRQ(ierr);
-  if (Petsc_Viewer_Stderr_keyval == MPI_KEYVAL_INVALID) {
-    ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,MPI_NULL_DELETE_FN,&Petsc_Viewer_Stderr_keyval,0);CHKERRQ(ierr);
-  }
+  ierr = MPIU_Keyval_create(MPI_NULL_COPY_FN,MPI_NULL_DELETE_FN,&Petsc_Viewer_Stderr_keyval,0);CHKERRQ(ierr);
   ierr = MPI_Attr_get(ncomm,Petsc_Viewer_Stderr_keyval,(void**)viewer,(PetscMPIInt*)&flg);CHKERRQ(ierr);
   if (!flg) { /* PetscViewer not yet created */
     ierr = PetscViewerASCIIOpen(ncomm,"stderr",viewer);CHKERRQ(ierr);
@@ -242,9 +238,8 @@ PetscErrorCode  PetscViewerASCIIOpen(MPI_Comm comm,const char name[],PetscViewer
     PetscFunctionReturn(0);
   }
   ierr = PetscSpinlockLock(&PetscViewerASCIISpinLockOpen);CHKERRQ(ierr);
-  if (Petsc_Viewer_keyval == MPI_KEYVAL_INVALID) {
-    ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelViewer,&Petsc_Viewer_keyval,(void*)0);CHKERRQ(ierr);
-  }
+  ierr = MPIU_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelViewer,&Petsc_Viewer_keyval,NULL);CHKERRQ(ierr);
+
   /*
        It would be better to move this code to PetscFileSetName() but since it must return a preexiting communicator
      we cannot do that, since PetscFileSetName() takes a communicator that already exists.

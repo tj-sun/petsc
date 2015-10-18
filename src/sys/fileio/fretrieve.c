@@ -2,6 +2,7 @@
 /*
       Code for opening and closing files.
 */
+#include <petsc/private/petscimpl.h>
 #include <petscsys.h>
 #if defined(PETSC_HAVE_PWD_H)
 #include <pwd.h>
@@ -155,9 +156,7 @@ PetscErrorCode  PetscSharedTmp(MPI_Comm comm,PetscBool  *shared)
     PetscFunctionReturn(0);
   }
 
-  if (Petsc_Tmp_keyval == MPI_KEYVAL_INVALID) {
-    ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelTmpShared,&Petsc_Tmp_keyval,0);CHKERRQ(ierr);
-  }
+  ierr = MPIU_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelTmpShared,&Petsc_Tmp_keyval,0);CHKERRQ(ierr);
 
   ierr = MPI_Attr_get(comm,Petsc_Tmp_keyval,(void**)&tagvalp,(int*)&iflg);CHKERRQ(ierr);
   if (!iflg) {
@@ -278,9 +277,7 @@ PetscErrorCode  PetscSharedWorkingDirectory(MPI_Comm comm,PetscBool  *shared)
     PetscFunctionReturn(0);
   }
 
-  if (Petsc_WD_keyval == MPI_KEYVAL_INVALID) {
-    ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelTmpShared,&Petsc_WD_keyval,0);CHKERRQ(ierr);
-  }
+  ierr = MPIU_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelTmpShared,&Petsc_WD_keyval,0);CHKERRQ(ierr);
 
   ierr = MPI_Attr_get(comm,Petsc_WD_keyval,(void**)&tagvalp,(int*)&iflg);CHKERRQ(ierr);
   if (!iflg) {

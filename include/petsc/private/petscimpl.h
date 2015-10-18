@@ -849,20 +849,39 @@ PETSC_STATIC_INLINE PetscErrorCode PetscSpinlockDestroy(PetscSpinlock *omp_lock)
 Thread safety requires either --with-openmp or --download-concurrencykit
 #endif
 
+extern PetscSpinlock PetscViewerASCIISpinLockOpen;
+extern PetscSpinlock PetscViewerASCIISpinLockStdout;
+extern PetscSpinlock PetscViewerASCIISpinLockStderr;
+extern PetscSpinlock PetscCommSpinLock;
+extern PetscSpinlock PetscKeyvalCreateSpinLock;
+
+#undef __FUNCT__
+#define __FUNCT__ "MPIU_Keyval_create"
+PETSC_STATIC_INLINE PetscErrorCode MPIU_Keyval_create(MPI_Copy_function *A,MPI_Delete_function *B,PetscMPIInt *C,void *D)
+{
+  PetscErrorCode ierr;
+
+  PetscFunctionBegin;
+  ierr = PetscSpinlockLock(&PetscKeyvalCreateSpinLock);CHKERRQ(ierr);
+  if (*C == MPI_KEYVAL_INVALID) {ierr = MPI_Keyval_create(A,B,C,D);CHKERRQ(ierr);}
+  ierr = PetscSpinlockUnlock(&PetscKeyvalCreateSpinLock);CHKERRQ(ierr);
+  PetscFunctionReturn(0);
+}
+
 #else
 typedef int PetscSpinlock;
 #define PetscSpinlockCreate(a)  0
 #define PetscSpinlockLock(a)    0
 #define PetscSpinlockUnlock(a)  0
 #define PetscSpinlockDestroy(a) 0
+PETSC_STATIC_INLINE PetscErrorCode MPIU_Keyval_create(MPI_Copy_function *A,MPI_Delete_function *B,PetscMPIInt *C,void *D)
+{
+  if (*C == MPI_KEYVAL_INVALID) return MPI_Keyval_create(A,B,C,D);
+  else return 0;
+}
 #endif
 
-#if defined(PETSC_HAVE_THREADSAFETY)
-extern PetscSpinlock PetscViewerASCIISpinLockOpen;
-extern PetscSpinlock PetscViewerASCIISpinLockStdout;
-extern PetscSpinlock PetscViewerASCIISpinLockStderr;
-extern PetscSpinlock PetscCommSpinLock;
-#endif
+
 #endif
 
 #endif /* _PETSCHEAD_H */

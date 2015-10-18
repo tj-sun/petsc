@@ -332,16 +332,7 @@ PetscErrorCode PetscSplitReductionGet(MPI_Comm comm,PetscSplitReduction **sr)
   PetscMPIInt    flag;
 
   PetscFunctionBegin;
-  if (Petsc_Reduction_keyval == MPI_KEYVAL_INVALID) {
-    /*
-       The calling sequence of the 2nd argument to this function changed
-       between MPI Standard 1.0 and the revisions 1.1 Here we match the
-       new standard, if you are using an MPI implementation that uses
-       the older version you will get a warning message about the next line;
-       it is only a warning message and should do no harm.
-    */
-    ierr = MPI_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelReduction,&Petsc_Reduction_keyval,0);CHKERRQ(ierr);
-  }
+  ierr = MPIU_Keyval_create(MPI_NULL_COPY_FN,Petsc_DelReduction,&Petsc_Reduction_keyval,NULL);CHKERRQ(ierr);
   ierr = MPI_Attr_get(comm,Petsc_Reduction_keyval,(void**)sr,&flag);CHKERRQ(ierr);
   if (!flag) {  /* doesn't exist yet so create it and put it in */
     ierr = PetscSplitReductionCreate(comm,sr);CHKERRQ(ierr);
