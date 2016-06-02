@@ -312,6 +312,72 @@ static PetscErrorCode MatNestFindIS(Mat A,PetscInt n,const IS list[],IS is,Petsc
 }
 
 #undef __FUNCT__
+#define __FUNCT__ "MatNestFindISs"
+static PetscErrorCode MatNestFindISs(Mat A, const PetscInt n, const IS list[], IS is, PetscInt *nfound,
+                                     PetscInt **found)
+{
+  PetscErrorCode  ierr;
+  PetscInt        i, offset, size;
+  IS              candidate;
+  PetscInt        candidateSize;
+  const PetscInt *indices;
+  PetscBool       flg;
+
+  PetscFunctionBegin;
+
+  PetscValidPointer(list,3);
+  PetscValidHeaderSpecific(is,IS_CLASSID,4);
+  PetscValidPointer(nfound,5);
+  PetscValidPointer(found,6);
+  *nfound = 0;
+  ierr = PetscMalloc1(n,found);CHKERRQ(ierr);
+
+  ierr = ISGetIndices(is,&indices);CHKERRQ(ierr);
+  ierr = ISGetLocalSize(is,&size);CHKERRQ(ierr);
+  offset = 0;
+  while (1) {
+    flg = PETSC_FALSE;
+    /* Walk over the ISes of A */
+    for (i=0; i<n; i++) {
+      PetscBool match = PETSC_FALSE;
+      PetscInt j;
+      /* Already found this IS. */
+      for (j=0;j<*nidx;j++) {
+        if (i == (*indices)[i]) {
+          match = PETSC_TRUE;
+          break;
+        }
+      }
+      if (match) continue;
+      /* Let's see if we can find the current IS in the remaining indices of the provided IS. */
+      ierr = ISGetLocalSize(list[i],&candidateSize);CHKERRQ(ierr);
+      /* Too long, won't match */
+      if (candidateSize + offset > size) continue;
+      /* Build the candidate. */
+      ierr = ISCreateGeneral(PetscObjectComm((PetscObject)is),
+                             candSize, isIndices + off, PETSC_USE_POINTER, &candidate);CHKERRQ(ierr);
+      ierr = ISEqual(list[i],candidate,&match);CHKERRQ(ierr);
+      ierr = ISDestroy(&candidate);CHKERRQ(ierr);
+      if (match) {
+        /* Found it, record so. */
+        (*indices)[*nidx] = i;
+        (*nidx)++;
+        flg = PETSC_TRUE;
+        offset += candidateSize;
+      }
+    }
+    /* We walked over all the remaining ISes and didn't match, we're done. */
+    if (!flg) {
+      break;
+    }
+  }
+  /* The target IS has some remaining indices, IOW, we failed to find a full match. */
+  if (offset < size) SETERRQ(PetscObjectComm((PetscObject)A),PETSC_ERR_ARG_INCOMP,"Could not find index set");
+
+  PetscFunctionReturn(0);
+}
+
+#undef __FUNCT__
 #define __FUNCT__ "MatNestGetRow"
 /* Get a block row as a new MatNest */
 static PetscErrorCode MatNestGetRow(Mat A,PetscInt row,Mat *B)
@@ -330,6 +396,52 @@ static PetscErrorCode MatNestGetRow(Mat A,PetscInt row,Mat *B)
 
   (*B)->assembled = A->assembled;
 
+  ierr = PetscObjectCompose((PetscObject)A,keyname,(PetscObject)*B);CHKERRQ(ierr);
+  ierr = PetscObjectDereference((PetscObject)*B);CHKERRQ(ierr); /* Leave the only remaining reference in the composition */
+  PetscFunctionReturn(0);
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "MatNestGetSubBlock"
+static PetscErrorCode MatNestGetSubBlock(Mat A,PetscInt nr, PetscInt *rows,PetscInt nc, PetscInt *cols,Mat *B)
+{
+  Mat_Nest      *vs = (Mat_Nest*)A->data;
+  Mat            block[nr*nc];
+  char           keyname[256];
+  PetscInt       i, j, off;
+  size_t         count;
+  PetscErrorCode ierr;
+
+  PetscFunctionBegin;
+  *B = NULL;
+  if (nr == 1 && nc == 1) {
+    *B = vs->m[rows[0]][cols[0]];
+    PetscFunctionReturn(0);
+  }
+  off = 0;
+  count = 0;
+  ierr = PetscSNPrintfCount(keyname + off,sizeof(keyname) - off,"NestBlock",&count);CHKERRQ(ierr);
+  off += count;
+  for (i=0;i<nr;i++) {
+    ierr = PetscSNPrintfCount(keyname + off, sizeof(keyname) - off,"_%D",&count, rows[i]);CHKERRQ(ierr);
+    off += count;
+  }
+  ierr = PetscSNPrintf(keyname + off, sizeof(keyname) - off, "x");CHKERRQ(ierr);
+  off++;
+  for (i=0; i<nc; i++) {
+    ierr = PetscSNPrintfCount(keyname + off, sizeof(keyname) - off,"_%D",&count, cols[i]);CHKERRQ(ierr);
+    off += count;
+  }
+  ierr = PetscObjectQuery((PetscObject)A,keyname,(PetscObject*)B);CHKERRQ(ierr);
+  if (*B) PetscFunctionReturn(0);
+
+  for (i=0; i<nr; i++) {
+    for (j=0;j<nc;j++) {
+      block[i*nc + j] = vs->m[rows[i]][cols[j]];
+    }
+  }
+  ierr = MatCreateNest(PetscObjectComm((PetscObject)A),nr,NULL,nc,NULL,block,B);CHKERRQ(ierr);
+  (*B)->assembled = A->assembled;
   ierr = PetscObjectCompose((PetscObject)A,keyname,(PetscObject)*B);CHKERRQ(ierr);
   ierr = PetscObjectDereference((PetscObject)*B);CHKERRQ(ierr); /* Leave the only remaining reference in the composition */
   PetscFunctionReturn(0);
@@ -368,9 +480,13 @@ static PetscErrorCode MatNestFindSubMat(Mat A,struct MatNestISPair *is,IS isrow,
     ierr = MatNestFindIS(A,vs->nr,is->row,isrow,&row);CHKERRQ(ierr);
     ierr = MatNestGetRow(A,row,B);CHKERRQ(ierr);
   } else {
-    ierr = MatNestFindIS(A,vs->nr,is->row,isrow,&row);CHKERRQ(ierr);
-    ierr = MatNestFindIS(A,vs->nc,is->col,iscol,&col);CHKERRQ(ierr);
-    *B   = vs->m[row][col];
+    PetscInt nr, nc;
+    PetscInt *rows, *cols;
+    ierr = MatNestFindISs(A,vs->nr,is->row,isrow,&nr,&rows);CHKERRQ(ierr);
+    ierr = MatNestFindISs(A,vs->nc,is->col,iscol,&nc,&cols);CHKERRQ(ierr);
+    ierr = MatNestGetSubBlock(A,nr,rows,nc,cols,B);CHKERRQ(ierr);
+    ierr = PetscFree(rows);CHKERRQ(ierr);
+    ierr = PetscFree(cols);CHKERRQ(ierr);
   }
   PetscFunctionReturn(0);
 }
