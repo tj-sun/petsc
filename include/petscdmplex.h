@@ -41,6 +41,7 @@ PETSC_EXTERN PetscErrorCode PetscPartitionerView(PetscPartitioner, PetscViewer);
 PETSC_EXTERN PetscErrorCode PetscPartitionerRegister(const char [], PetscErrorCode (*)(PetscPartitioner));
 PETSC_EXTERN PetscErrorCode PetscPartitionerRegisterDestroy(void);
 
+PETSC_EXTERN PetscErrorCode PetscPartitionerSetPointHeight(PetscPartitioner, PetscInt);
 PETSC_EXTERN PetscErrorCode PetscPartitionerPartition(PetscPartitioner, DM, PetscSection, IS *);
 
 PETSC_EXTERN PetscErrorCode PetscPartitionerShellSetPartition(PetscPartitioner, PetscInt, const PetscInt[], const PetscInt[]);

@@ -6492,17 +6492,35 @@ static PetscErrorCode DMPlexCreateNumbering_Private(DM dm, PetscInt pStart, Pets
   PetscFunctionReturn(0);
 }
 
+PetscErrorCode DMPlexCreateHeightNumbering_Internal(DM dm, PetscInt height, PetscBool includeHybrid, IS *globalHeightNumbers)
+{
+  PetscInt       pStart, pEnd, pMax, cMax, eMax, fMax, vMax;
+  PetscErrorCode ierr;
+
+  PetscFunctionBegin;
+  ierr = DMPlexGetHeightStratum(dm, height, &pStart, &pEnd);CHKERRQ(ierr);
+  if (includeHybrid) {
+    /* TODO: is this right? */
+    ierr = DMPlexGetHybridBounds(dm, &cMax, &fMax, &eMax, &vMax);CHKERRQ(ierr);
+    if (height == 0) pMax = cMax;
+    else if (height == 1) pMax = fMax;
+    else if (height == 2) pMax = eMax;
+    else if (height == 3) pMax = vMax;
+    else SETERRQ1(PetscObjectComm((PetscObject)dm), PETSC_ERR_ARG_WRONG, "Invalid DM height %D", height);
+    if (pMax >= 0) pEnd = PetscMin(pEnd, pMax);
+  }
+  ierr = DMPlexCreateNumbering_Private(dm, pStart, pEnd, 0, NULL, dm->sf, globalHeightNumbers);CHKERRQ(ierr);
+  PetscFunctionReturn(0);
+}
+
 PetscErrorCode DMPlexCreateCellNumbering_Internal(DM dm, PetscBool includeHybrid, IS *globalCellNumbers)
 {
-  PetscInt       cellHeight, cStart, cEnd, cMax;
+  PetscInt       cellHeight;
   PetscErrorCode ierr;
 
   PetscFunctionBegin;
   ierr = DMPlexGetVTKCellHeight(dm, &cellHeight);CHKERRQ(ierr);
-  ierr = DMPlexGetHeightStratum(dm, cellHeight, &cStart, &cEnd);CHKERRQ(ierr);
-  ierr = DMPlexGetHybridBounds(dm, &cMax, NULL, NULL, NULL);CHKERRQ(ierr);
-  if (cMax >= 0 && !includeHybrid) cEnd = PetscMin(cEnd, cMax);
-  ierr = DMPlexCreateNumbering_Private(dm, cStart, cEnd, 0, NULL, dm->sf, globalCellNumbers);CHKERRQ(ierr);
+  ierr = DMPlexCreateHeightNumbering_Internal(dm, cellHeight, includeHybrid, globalCellNumbers);CHKERRQ(ierr);
   PetscFunctionReturn(0);
 }
 

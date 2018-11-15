@@ -38,7 +38,7 @@ const char ParMetisPartitionerCitation[] = "@article{KarypisKumar98,\n"
 + numVertices     - Number of vertices in the graph
 . offsets         - Point offsets in the graph
 . adjacency       - Point connectivity in the graph
-- globalNumbering - A map from the local cell numbering to the global numbering used in "adjacency".  Negative indicates that the cell is a duplicate from another process.
+- globalNumbering - A map from the local point numbering to the global numbering used in "adjacency".  Negative indicates that the cell is a duplicate from another process.
 
   The user can control the definition of adjacency for the mesh using DMPlexGetAdjacencyUseCone() and
   DMPlexSetAdjacencyUseClosure(). They should choose the combination appropriate for the function
@@ -52,8 +52,8 @@ PetscErrorCode DMPlexCreatePartitionerGraph(DM dm, PetscInt height, PetscInt *nu
 {
   PetscInt       p, pStart, pEnd, a, adjSize, idx, size, nroots;
   PetscInt      *adj = NULL, *vOffsets = NULL, *graph = NULL;
-  IS             cellNumbering;
-  const PetscInt *cellNum;
+  IS             pointNumbering;
+  const PetscInt *pointNum;
   PetscBool      useCone, useClosure;
   PetscSection   section;
   PetscSegBuffer adjBuffer;
@@ -75,15 +75,15 @@ PetscErrorCode DMPlexCreatePartitionerGraph(DM dm, PetscInt height, PetscInt *nu
   ierr = DMPlexGetAdjacencyUseClosure(dm, &useClosure);CHKERRQ(ierr);
   ierr = DMPlexSetAdjacencyUseCone(dm, PETSC_TRUE);CHKERRQ(ierr);
   ierr = DMPlexSetAdjacencyUseClosure(dm, PETSC_FALSE);CHKERRQ(ierr);
-  ierr = DMPlexCreateCellNumbering_Internal(dm, PETSC_TRUE, &cellNumbering);CHKERRQ(ierr);
+  ierr = DMPlexCreateHeightNumbering_Internal(dm, height, PETSC_TRUE, &pointNumbering);CHKERRQ(ierr);
   if (globalNumbering) {
-    ierr = PetscObjectReference((PetscObject)cellNumbering);CHKERRQ(ierr);
-    *globalNumbering = cellNumbering;
+    ierr = PetscObjectReference((PetscObject)pointNumbering);CHKERRQ(ierr);
+    *globalNumbering = pointNumbering;
   }
-  ierr = ISGetIndices(cellNumbering, &cellNum);CHKERRQ(ierr);
+  ierr = ISGetIndices(pointNumbering, &pointNum);CHKERRQ(ierr);
   for (*numVertices = 0, p = pStart; p < pEnd; p++) {
     /* Skip non-owned cells in parallel (ParMetis expects no overlap) */
-    if (nroots > 0) {if (cellNum[p] < 0) continue;}
+    if (nroots > 0) {if (pointNum[p-pStart] < 0) continue;}
     adjSize = PETSC_DETERMINE;
     ierr = DMPlexGetAdjacency(dm, p, &adjSize, &adj);CHKERRQ(ierr);
     for (a = 0; a < adjSize; ++a) {
@@ -104,26 +104,26 @@ PetscErrorCode DMPlexCreatePartitionerGraph(DM dm, PetscInt height, PetscInt *nu
   ierr = PetscSectionGetStorageSize(section, &size);CHKERRQ(ierr);
   ierr = PetscMalloc1(*numVertices+1, &vOffsets);CHKERRQ(ierr);
   for (idx = 0, p = pStart; p < pEnd; p++) {
-    if (nroots > 0) {if (cellNum[p] < 0) continue;}
+    if (nroots > 0) {if (pointNum[p-pStart] < 0) continue;}
     ierr = PetscSectionGetOffset(section, p, &(vOffsets[idx++]));CHKERRQ(ierr);
   }
   vOffsets[*numVertices] = size;
   if (offsets) *offsets = vOffsets;
   ierr = PetscSegBufferExtractAlloc(adjBuffer, &graph);CHKERRQ(ierr);
   {
-    ISLocalToGlobalMapping ltogCells;
-    PetscInt n, size, *cells_arr;
+    ISLocalToGlobalMapping ltogPoints;
+    PetscInt n, size, *points_arr;
     /* In parallel, apply a global cell numbering to the graph */
-    ierr = ISRestoreIndices(cellNumbering, &cellNum);CHKERRQ(ierr);
-    ierr = ISLocalToGlobalMappingCreateIS(cellNumbering, &ltogCells);CHKERRQ(ierr);
-    ierr = ISLocalToGlobalMappingGetSize(ltogCells, &size);CHKERRQ(ierr);
-    ierr = ISLocalToGlobalMappingGetIndices(ltogCells, (const PetscInt**)&cells_arr);CHKERRQ(ierr);
+    ierr = ISRestoreIndices(pointNumbering, &pointNum);CHKERRQ(ierr);
+    ierr = ISLocalToGlobalMappingCreateIS(pointNumbering, &ltogPoints);CHKERRQ(ierr);
+    ierr = ISLocalToGlobalMappingGetSize(ltogPoints, &size);CHKERRQ(ierr);
+    ierr = ISLocalToGlobalMappingGetIndices(ltogPoints, (const PetscInt**)&points_arr);CHKERRQ(ierr);
     /* Convert to positive global cell numbers */
-    for (n=0; n<size; n++) {if (cells_arr[n] < 0) cells_arr[n] = -(cells_arr[n]+1);}
-    ierr = ISLocalToGlobalMappingRestoreIndices(ltogCells, (const PetscInt**)&cells_arr);CHKERRQ(ierr);
-    ierr = ISLocalToGlobalMappingApplyBlock(ltogCells, vOffsets[*numVertices], graph, graph);CHKERRQ(ierr);
-    ierr = ISLocalToGlobalMappingDestroy(&ltogCells);CHKERRQ(ierr);
-    ierr = ISDestroy(&cellNumbering);CHKERRQ(ierr);
+    for (n=0; n<size; n++) {if (points_arr[n] < 0) points_arr[n] = -(points_arr[n]+1);}
+    ierr = ISLocalToGlobalMappingRestoreIndices(ltogPoints, (const PetscInt**)&points_arr);CHKERRQ(ierr);
+    ierr = ISLocalToGlobalMappingApplyBlock(ltogPoints, vOffsets[*numVertices], graph, graph);CHKERRQ(ierr);
+    ierr = ISLocalToGlobalMappingDestroy(&ltogPoints);CHKERRQ(ierr);
+    ierr = ISDestroy(&pointNumbering);CHKERRQ(ierr);
   }
   if (adjacency) *adjacency = graph;
   /* Clean up */
@@ -510,6 +510,7 @@ PetscErrorCode PetscPartitionerSetFromOptions(PetscPartitioner part)
   ierr = PetscPartitionerRegisterAll();CHKERRQ(ierr);
   ierr = PetscPartitionerGetDefaultType(((PetscObject) part)->type_name,&defaultType);CHKERRQ(ierr);
   ierr = PetscObjectOptionsBegin((PetscObject) part);CHKERRQ(ierr);
+  ierr = PetscOptionsInt("-petscpartitioner_point_height", "Set the height of points used to create the graph to partition", "PetscPartitionerSetPointHeight", part->height, &part->height, NULL);CHKERRQ(ierr);
   ierr = PetscOptionsFList("-petscpartitioner_type", "Graph partitioner", "PetscPartitionerSetType", PetscPartitionerList, defaultType, name, sizeof(name), &flg);CHKERRQ(ierr);
   if (flg) {
     ierr = PetscPartitionerSetType(part, name);CHKERRQ(ierr);
@@ -611,6 +612,29 @@ PetscErrorCode PetscPartitionerCreate(MPI_Comm comm, PetscPartitioner *part)
 }
 
 /*@
+ PetscPartitionerSetPointHeight - set the height of points used to create a partition.
+
+ Logically collective on part
+
+ Input Parameters:
++ part - The PetscPartitioner
+- height - the point height
+
+ Level: developer
+
+.seealso: PetscPartitionerCreate(), PetscPartitionerPartition()
+@*/
+PetscErrorCode PetscPartitionerSetPointHeight(PetscPartitioner part, PetscInt height)
+{
+  PetscFunctionBegin;
+  PetscValidHeaderSpecific(part, PETSCPARTITIONER_CLASSID, 1);
+
+  part->height = height;
+
+  PetscFunctionReturn(0);
+}
+
+/*@
   PetscPartitionerPartition - Create a non-overlapping partition of the cells in the mesh
 
   Collective on DM
@@ -633,6 +657,10 @@ PetscErrorCode PetscPartitionerPartition(PetscPartitioner part, DM dm, PetscSect
 {
   PetscMPIInt    size;
   PetscErrorCode ierr;
+  PetscInt numVertices;
+  PetscInt *start     = NULL;
+  PetscInt *adjacency = NULL;
+  IS       globalNumbering;
 
   PetscFunctionBegin;
   PetscValidHeaderSpecific(part, PETSCPARTITIONER_CLASSID, 1);
@@ -653,45 +681,39 @@ PetscErrorCode PetscPartitionerPartition(PetscPartitioner part, DM dm, PetscSect
     ierr = ISCreateGeneral(PetscObjectComm((PetscObject) part), cEnd-cStart, points, PETSC_OWN_POINTER, partition);CHKERRQ(ierr);
     PetscFunctionReturn(0);
   }
-  if (part->height == 0) {
-    PetscInt numVertices;
-    PetscInt *start     = NULL;
-    PetscInt *adjacency = NULL;
-    IS       globalNumbering;
 
-    ierr = DMPlexCreatePartitionerGraph(dm, 0, &numVertices, &start, &adjacency, &globalNumbering);CHKERRQ(ierr);
-    if (!part->ops->partition) SETERRQ(PetscObjectComm((PetscObject) part), PETSC_ERR_ARG_WRONGSTATE, "PetscPartitioner has no type");
-    ierr = (*part->ops->partition)(part, dm, size, numVertices, start, adjacency, partSection, partition);CHKERRQ(ierr);
-    ierr = PetscFree(start);CHKERRQ(ierr);
-    ierr = PetscFree(adjacency);CHKERRQ(ierr);
-    if (globalNumbering) { /* partition is wrt global unique numbering: change this to be wrt local numbering */
-      const PetscInt *globalNum;
-      const PetscInt *partIdx;
-      PetscInt *map, cStart, cEnd;
-      PetscInt *adjusted, i, localSize, offset;
-      IS    newPartition;
+  ierr = DMPlexCreatePartitionerGraph(dm, 0, &numVertices, &start, &adjacency, &globalNumbering);CHKERRQ(ierr);
+  if (!part->ops->partition) SETERRQ(PetscObjectComm((PetscObject) part), PETSC_ERR_ARG_WRONGSTATE, "PetscPartitioner has no type");
+  ierr = (*part->ops->partition)(part, dm, size, numVertices, start, adjacency, partSection, partition);CHKERRQ(ierr);
+  ierr = PetscFree(start);CHKERRQ(ierr);
+  ierr = PetscFree(adjacency);CHKERRQ(ierr);
+  if (globalNumbering) { /* partition is wrt global unique numbering: change this to be wrt local numbering */
+    const PetscInt *globalNum;
+    const PetscInt *partIdx;
+    PetscInt *map, cStart, cEnd;
+    PetscInt *adjusted, i, localSize, offset;
+    IS    newPartition;
 
-      ierr = ISGetLocalSize(*partition,&localSize);CHKERRQ(ierr);
-      ierr = PetscMalloc1(localSize,&adjusted);CHKERRQ(ierr);
-      ierr = ISGetIndices(globalNumbering,&globalNum);CHKERRQ(ierr);
-      ierr = ISGetIndices(*partition,&partIdx);CHKERRQ(ierr);
-      ierr = PetscMalloc1(localSize,&map);CHKERRQ(ierr);
-      ierr = DMPlexGetHeightStratum(dm, part->height, &cStart, &cEnd);CHKERRQ(ierr);
-      for (i = cStart, offset = 0; i < cEnd; i++) {
-        if (globalNum[i - cStart] >= 0) map[offset++] = i;
-      }
-      for (i = 0; i < localSize; i++) {
-        adjusted[i] = map[partIdx[i]];
-      }
-      ierr = PetscFree(map);CHKERRQ(ierr);
-      ierr = ISRestoreIndices(*partition,&partIdx);CHKERRQ(ierr);
-      ierr = ISRestoreIndices(globalNumbering,&globalNum);CHKERRQ(ierr);
-      ierr = ISCreateGeneral(PETSC_COMM_SELF,localSize,adjusted,PETSC_OWN_POINTER,&newPartition);CHKERRQ(ierr);
-      ierr = ISDestroy(&globalNumbering);CHKERRQ(ierr);
-      ierr = ISDestroy(partition);CHKERRQ(ierr);
-      *partition = newPartition;
+    ierr = ISGetLocalSize(*partition,&localSize);CHKERRQ(ierr);
+    ierr = PetscMalloc1(localSize,&adjusted);CHKERRQ(ierr);
+    ierr = ISGetIndices(globalNumbering,&globalNum);CHKERRQ(ierr);
+    ierr = ISGetIndices(*partition,&partIdx);CHKERRQ(ierr);
+    ierr = PetscMalloc1(localSize,&map);CHKERRQ(ierr);
+    ierr = DMPlexGetHeightStratum(dm, part->height, &cStart, &cEnd);CHKERRQ(ierr);
+    for (i = cStart, offset = 0; i < cEnd; i++) {
+      if (globalNum[i - cStart] >= 0) map[offset++] = i;
     }
-  } else SETERRQ1(PetscObjectComm((PetscObject) part), PETSC_ERR_ARG_OUTOFRANGE, "Invalid height %D for points to partition", part->height);
+    for (i = 0; i < localSize; i++) {
+      adjusted[i] = map[partIdx[i]];
+    }
+    ierr = PetscFree(map);CHKERRQ(ierr);
+    ierr = ISRestoreIndices(*partition,&partIdx);CHKERRQ(ierr);
+    ierr = ISRestoreIndices(globalNumbering,&globalNum);CHKERRQ(ierr);
+    ierr = ISCreateGeneral(PETSC_COMM_SELF,localSize,adjusted,PETSC_OWN_POINTER,&newPartition);CHKERRQ(ierr);
+    ierr = ISDestroy(&globalNumbering);CHKERRQ(ierr);
+    ierr = ISDestroy(partition);CHKERRQ(ierr);
+    *partition = newPartition;
+  }
   PetscFunctionReturn(0);
 
 }
