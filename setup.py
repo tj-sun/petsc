@@ -99,6 +99,9 @@ def config(prefix, dry_run=False):
         '--with-shared-libraries=1',
         '--with-debugging=0',
         '--with-c2html=0', # not needed
+        '--download-viennacl',
+        '--with-opencl-include=/usr/local/cuda-9.0/include',
+        '--with-opencl-lib=\"-L/usr/local/cuda-9.0/lib64 -lOpenCL\"'
         ]
     if '--with-fc=0' in CONFIGURE_OPTIONS:
         options.append('--with-sowing=0')
